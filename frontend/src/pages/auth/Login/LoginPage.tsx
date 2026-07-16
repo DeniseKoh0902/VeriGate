@@ -1,40 +1,31 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LogIn, ShieldCheck, User } from 'lucide-react';
 import { AuthLayout } from '@/components/layout/AuthLayout';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { login } from '@/services/auth.service';
+import { cn } from '@/lib/cn';
 import type { LoginFormValues } from '@/types/auth.types';
 
 const initialValues: LoginFormValues = { email: '', password: '' };
 
+type LoginRole = 'admin' | 'employee';
+
 export function LoginPage() {
   const navigate = useNavigate();
+  const [role, setRole] = useState<LoginRole>('admin');
   const [values, setValues] = useState<LoginFormValues>(initialValues);
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleChange =
     (field: keyof LoginFormValues) => (event: React.ChangeEvent<HTMLInputElement>) => {
       setValues((prev) => ({ ...prev, [field]: event.target.value }));
     };
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      await login(values);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to sign in.');
-    } finally {
-      setIsLoading(false);
-    }
+    navigate(role === 'admin' ? '/dashboard' : '/workspace');
   };
 
   return (
@@ -44,6 +35,31 @@ export function LoginPage() {
         <p className="mt-1 text-sm text-slate-500">
           Please enter your credentials to access the governance dashboard.
         </p>
+
+        <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setRole('admin')}
+            className={cn(
+              'flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors',
+              role === 'admin' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+            )}
+          >
+            <ShieldCheck size={15} />
+            IT Infrastructure
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole('employee')}
+            className={cn(
+              'flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors',
+              role === 'employee' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+            )}
+          >
+            <User size={15} />
+            Employee
+          </button>
+        </div>
 
         <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
           <Input
@@ -90,9 +106,7 @@ export function LoginPage() {
             required
           />
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <Button type="submit" isLoading={isLoading}>
+          <Button type="submit">
             Sign In
             <LogIn size={16} />
           </Button>
