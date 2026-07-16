@@ -1,0 +1,66 @@
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  COMPLIANCE
+  EMPLOYEE
+}
+
+enum AiToolRiskTier {
+  APPROVED
+  RESTRICTED
+  BLOCKED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  department   String
+  role         Role     @default(EMPLOYEE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  aiUsageLogs AiUsageLog[]
+
+  @@map("users")
+}
+
+model AiTool {
+  id        String         @id @default(uuid())
+  name      String         @unique
+  vendor    String
+  riskTier  AiToolRiskTier @default(RESTRICTED)
+  isApproved Boolean       @default(false)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  usageLogs AiUsageLog[]
+
+  @@map("ai_tools")
+}
+
+model AiUsageLog {
+  id        String   @id @default(uuid())
+  userId    String
+  aiToolId  String
+  action    String
+  dataScope String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  aiTool AiTool @relation(fields: [aiToolId], references: [id])
+
+  @@map("ai_usage_logs")
+}

@@ -1,0 +1,15 @@
+# Python
+backend/.venv/
+backend/**/__pycache__/
+*.pyc
+
+# Env files
+.env
+backend/.env
+
+# Prisma generated client
+backend/.venv/Lib/site-packages/prisma/
+
+# OS
+.DS_Store
+Thumbs.db
