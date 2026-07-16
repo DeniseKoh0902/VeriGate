@@ -8,13 +8,7 @@ import { RiskAlertCenterPage } from '@/pages/riskAlertCenter';
 import { AuditLogsPage } from '@/pages/auditLogs';
 import { AiPolicyRecommendationPage } from '@/pages/aiPolicyRecommendation';
 import { GovernanceCopilotPage } from '@/pages/governanceCopilot';
-import {
-  AiWorkspacePage,
-  PromptRiskAnalysisPage,
-  PromptSanitizationPage,
-  AiToolRequestPage,
-  MyComplianceOverviewPage,
-} from '@/pages/workspace';
+import { AiWorkspacePage, AiToolRequestPage, MyComplianceOverviewPage } from '@/pages/workspace';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { EmployeeLayout } from '@/components/layout/EmployeeLayout';
 
@@ -37,8 +31,6 @@ export function AppRoutes() {
 
       <Route element={<EmployeeLayout />}>
         <Route path="/workspace" element={<AiWorkspacePage />} />
-        <Route path="/workspace/risk-analysis" element={<PromptRiskAnalysisPage />} />
-        <Route path="/workspace/sanitization" element={<PromptSanitizationPage />} />
         <Route path="/workspace/tool-request" element={<AiToolRequestPage />} />
         <Route path="/workspace/compliance-overview" element={<MyComplianceOverviewPage />} />
       </Route>

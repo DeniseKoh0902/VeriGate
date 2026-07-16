@@ -1,12 +1,10 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Bot, SearchCheck, Eraser, FilePlus2, UserCheck, LifeBuoy, LogOut } from 'lucide-react';
+import { Bot, FilePlus2, UserCheck, LifeBuoy, LogOut } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import logoHeader from '@/assets/logoHeader.png';
 
 const navItems = [
   { label: 'AI Workspace', path: '/workspace', icon: Bot },
-  { label: 'Prompt Risk Analysis', path: '/workspace/risk-analysis', icon: SearchCheck },
-  { label: 'Prompt Sanitization', path: '/workspace/sanitization', icon: Eraser },
   { label: 'AI Tool Request', path: '/workspace/tool-request', icon: FilePlus2 },
   { label: 'My Compliance Overview', path: '/workspace/compliance-overview', icon: UserCheck },
 ];
