@@ -10,6 +10,7 @@ from app.repositories import (
 from app.repositories.user_repository import get_or_create_demo_employee
 from app.schemas.compliance import ComplianceOverviewOut, ComplianceRecordOut, FlagStatus
 from app.schemas.prompt import RiskFindingOut
+from app.services import incident_service
 
 _GOOD_STANDING_FLAG_THRESHOLD = 2
 
@@ -43,15 +44,13 @@ async def get_overview() -> ComplianceOverviewOut:
             continue
         appeal = appeals_by_source.get(("PROMPT_BLOCK", prompt["id"]))
         risk_findings = prompt["riskFindings"]
-        category = risk_findings[0]["category"] if risk_findings else None
+        description = incident_service.describe_prompt_block(prompt)
         records.append(
             ComplianceRecordOut(
                 id=prompt["id"],
                 sourceType="PROMPT_BLOCK",
-                title=f"Prompt blocked — {category} detected"
-                if category
-                else "Prompt blocked by governance policy",
-                policy=category,
+                title=description["title"],
+                policy=description["policy"],
                 date=prompt["createdAt"],
                 flagStatus=_flag_status_for_appeal(appeal),
                 appealable=appeal is None,
@@ -71,12 +70,13 @@ async def get_overview() -> ComplianceOverviewOut:
         if req["status"] != "REJECTED":
             continue
         appeal = appeals_by_source.get(("TOOL_REJECTION", req["id"]))
+        description = incident_service.describe_tool_rejection(req)
         records.append(
             ComplianceRecordOut(
                 id=req["id"],
                 sourceType="TOOL_REJECTION",
-                title=f'{req["toolName"]} request rejected',
-                policy=req["rejectionReason"],
+                title=description["title"],
+                policy=description["policy"],
                 date=req["submittedAt"],
                 flagStatus=_flag_status_for_appeal(appeal),
                 appealable=appeal is None,
@@ -92,12 +92,13 @@ async def get_overview() -> ComplianceOverviewOut:
 
     for alert in risk_alerts:
         appeal = appeals_by_source.get(("RISK_ALERT", alert["id"]))
+        description = incident_service.describe_risk_alert(alert)
         records.append(
             ComplianceRecordOut(
                 id=alert["id"],
                 sourceType="RISK_ALERT",
-                title=alert["description"] or alert["alertType"],
-                policy=alert["alertType"],
+                title=description["title"],
+                policy=description["policy"],
                 date=alert["createdAt"],
                 flagStatus=_flag_status_for_appeal(appeal),
                 appealable=appeal is None,

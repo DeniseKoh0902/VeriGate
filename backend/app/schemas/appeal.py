@@ -29,3 +29,26 @@ class AppealOut(BaseModel):
     slaDeadline: datetime | None
     createdAt: datetime
     resolvedAt: datetime | None
+
+
+class AppealResolveRequest(BaseModel):
+    resolution: AppealResolution
+    resolutionNotes: str | None = None
+
+
+class AppealAdminOut(BaseModel):
+    id: str
+    sourceType: AppealSourceType
+    sourceId: str
+    title: str
+    policy: str | None
+    employeeName: str
+    employeeEmail: str
+    justification: str
+    evidenceUrl: str | None
+    status: AppealStatus
+    resolution: AppealResolution | None
+    resolutionNotes: str | None
+    slaDeadline: datetime | None
+    createdAt: datetime
+    resolvedAt: datetime | None

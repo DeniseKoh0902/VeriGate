@@ -50,6 +50,57 @@ async def get_appeal_by_source(
         )
 
 
+async def list_all_appeals(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT a.*, u."name" AS "employeeName", u."email" AS "employeeEmail"
+            FROM "appeals" a
+            JOIN "users" u ON u."id" = a."userId"
+            ORDER BY a."createdAt" DESC
+            """
+        )
+
+
+async def resolve_appeal(
+    pool: asyncpg.Pool,
+    appeal_id: str,
+    *,
+    resolution: str,
+    resolution_notes: str | None,
+    reviewed_by_id: str,
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        updated = await conn.fetchrow(
+            """
+            UPDATE "appeals" SET
+                "status" = 'RESOLVED',
+                "resolution" = $2::"AppealResolution",
+                "resolutionNotes" = $3,
+                "reviewedById" = $4,
+                "resolvedAt" = CURRENT_TIMESTAMP
+            WHERE "id" = $1
+            RETURNING "id"
+            """,
+            appeal_id,
+            resolution,
+            resolution_notes,
+            reviewed_by_id,
+        )
+        if updated is None:
+            return None
+
+        return await conn.fetchrow(
+            """
+            SELECT a.*, u."name" AS "employeeName", u."email" AS "employeeEmail"
+            FROM "appeals" a
+            JOIN "users" u ON u."id" = a."userId"
+            WHERE a."id" = $1
+            """,
+            appeal_id,
+        )
+
+
 async def create_appeal(
     pool: asyncpg.Pool,
     *,
