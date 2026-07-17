@@ -64,10 +64,10 @@ python -m venv .venv
 pip install -r requirements.txt
 cp .env.example .env            # fill in your Supabase credentials — see below
 prisma migrate dev              # applies schema to Supabase
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
-Runs at `http://localhost:8000`; health check at `/health`.
+Runs at `http://localhost:8001`; health check at `/health`.
 
 > **Windows note:** `prisma generate` currently fails with `spawn prisma-client-py ENOENT` —
 > `prisma-client-py` was archived/unmaintained in April 2025 and this is an unresolved upstream bug,
