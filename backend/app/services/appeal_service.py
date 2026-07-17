@@ -2,9 +2,22 @@ import asyncpg
 from fastapi import HTTPException, status
 
 from app.db.pool import get_pool
-from app.repositories import ai_tool_request_repository, appeal_repository, prompt_repository, risk_alert_repository
+from app.repositories import (
+    ai_tool_request_repository,
+    appeal_repository,
+    notification_repository,
+    prompt_repository,
+    risk_alert_repository,
+)
 from app.repositories.user_repository import get_or_create_demo_employee, get_or_create_system_user
-from app.schemas.appeal import AppealAdminOut, AppealCreate, AppealOut, AppealResolveRequest
+from app.schemas.appeal import (
+    AppealAdminOut,
+    AppealCreate,
+    AppealOut,
+    AppealRequestInfoRequest,
+    AppealResolveRequest,
+    AppealRespondRequest,
+)
 from app.services import incident_service
 
 # Maps an appeal's sourceType to (how to fetch the underlying record, how to
@@ -44,6 +57,8 @@ async def _to_admin_out(pool: asyncpg.Pool, row: asyncpg.Record) -> AppealAdminO
         status=row["status"],
         resolution=row["resolution"],
         resolutionNotes=row["resolutionNotes"],
+        additionalInfoRequest=row["additionalInfoRequest"],
+        employeeResponse=row["employeeResponse"],
         slaDeadline=row["slaDeadline"],
         createdAt=row["createdAt"],
         resolvedAt=row["resolvedAt"],
@@ -70,6 +85,53 @@ async def resolve_appeal(appeal_id: str, payload: AppealResolveRequest) -> Appea
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appeal not found.")
     return await _to_admin_out(pool, row)
+
+
+async def request_more_info(appeal_id: str, payload: AppealRequestInfoRequest) -> AppealAdminOut:
+    pool = get_pool()
+    # TODO: replace with the authenticated admin's user id once real login is wired up.
+    reviewer_id = await get_or_create_system_user(pool)
+    row = await appeal_repository.request_more_info(
+        pool,
+        appeal_id,
+        message=payload.message,
+        requested_by_id=reviewer_id,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Appeal not found, or it has already been resolved.",
+        )
+
+    await notification_repository.create_notification(
+        pool,
+        user_id=row["userId"],
+        title="Your appeal requires additional information",
+        message=payload.message,
+        notification_type="APPEAL_INFO_REQUESTED",
+        related_entity_type="Appeal",
+        related_entity_id=appeal_id,
+    )
+
+    return await _to_admin_out(pool, row)
+
+
+async def respond_to_info_request(appeal_id: str, payload: AppealRespondRequest) -> AppealOut:
+    pool = get_pool()
+    # TODO: replace with the authenticated employee's user id once real login is wired up.
+    user_id = await get_or_create_demo_employee(pool)
+    row = await appeal_repository.respond_to_info_request(
+        pool,
+        appeal_id,
+        user_id=user_id,
+        response=payload.response,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This appeal isn't awaiting additional information from you.",
+        )
+    return AppealOut(**dict(row))
 
 
 async def list_my_appeals() -> list[AppealOut]:

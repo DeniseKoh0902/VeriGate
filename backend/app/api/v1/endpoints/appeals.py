@@ -1,6 +1,13 @@
 from fastapi import APIRouter, status
 
-from app.schemas.appeal import AppealAdminOut, AppealCreate, AppealOut, AppealResolveRequest
+from app.schemas.appeal import (
+    AppealAdminOut,
+    AppealCreate,
+    AppealOut,
+    AppealRequestInfoRequest,
+    AppealResolveRequest,
+    AppealRespondRequest,
+)
 from app.services import appeal_service
 
 router = APIRouter(prefix="/appeals", tags=["appeals"])
@@ -26,3 +33,13 @@ async def create_appeal(payload: AppealCreate) -> AppealOut:
 @router.patch("/{appeal_id}/resolve", response_model=AppealAdminOut)
 async def resolve_appeal(appeal_id: str, payload: AppealResolveRequest) -> AppealAdminOut:
     return await appeal_service.resolve_appeal(appeal_id, payload)
+
+
+@router.patch("/{appeal_id}/request-info", response_model=AppealAdminOut)
+async def request_more_info(appeal_id: str, payload: AppealRequestInfoRequest) -> AppealAdminOut:
+    return await appeal_service.request_more_info(appeal_id, payload)
+
+
+@router.patch("/{appeal_id}/respond", response_model=AppealOut)
+async def respond_to_info_request(appeal_id: str, payload: AppealRespondRequest) -> AppealOut:
+    return await appeal_service.respond_to_info_request(appeal_id, payload)

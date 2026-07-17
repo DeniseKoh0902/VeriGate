@@ -10,6 +10,8 @@ export interface Appeal {
   status: AppealStatus;
   resolution: AppealResolution | null;
   resolutionNotes: string | null;
+  additionalInfoRequest: string | null;
+  employeeResponse: string | null;
   reviewedById: string | null;
   slaDeadline: string | null;
   createdAt: string;
@@ -36,6 +38,8 @@ export interface AppealAdmin {
   status: AppealStatus;
   resolution: AppealResolution | null;
   resolutionNotes: string | null;
+  additionalInfoRequest: string | null;
+  employeeResponse: string | null;
   slaDeadline: string | null;
   createdAt: string;
   resolvedAt: string | null;
@@ -44,4 +48,12 @@ export interface AppealAdmin {
 export interface AppealResolveInput {
   resolution: AppealResolution;
   resolutionNotes?: string | null;
+}
+
+export interface AppealRequestInfoInput {
+  message: string;
+}
+
+export interface AppealRespondInput {
+  response: string;
 }

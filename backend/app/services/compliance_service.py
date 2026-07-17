@@ -22,6 +22,8 @@ def _flag_status_for_appeal(appeal: asyncpg.Record | None) -> FlagStatus:
         return "APPEAL_PENDING"
     if appeal["status"] == "UNDER_REVIEW":
         return "APPEAL_UNDER_REVIEW"
+    if appeal["status"] == "AWAITING_INFO":
+        return "APPEAL_AWAITING_INFO"
     return "OVERTURNED" if appeal["resolution"] == "OVERTURNED" else "UPHELD"
 
 
@@ -57,6 +59,8 @@ async def get_overview() -> ComplianceOverviewOut:
                 appealId=appeal["id"] if appeal else None,
                 appealStatus=appeal["status"] if appeal else None,
                 appealResolution=appeal["resolution"] if appeal else None,
+                additionalInfoRequest=appeal["additionalInfoRequest"] if appeal else None,
+                employeeResponse=appeal["employeeResponse"] if appeal else None,
                 promptText=prompt["promptText"],
                 sanitizedText=prompt["sanitizedText"],
                 riskFindings=[
@@ -83,6 +87,8 @@ async def get_overview() -> ComplianceOverviewOut:
                 appealId=appeal["id"] if appeal else None,
                 appealStatus=appeal["status"] if appeal else None,
                 appealResolution=appeal["resolution"] if appeal else None,
+                additionalInfoRequest=appeal["additionalInfoRequest"] if appeal else None,
+                employeeResponse=appeal["employeeResponse"] if appeal else None,
                 toolName=req["toolName"],
                 businessReason=req["businessReason"],
                 department=req["department"],
@@ -105,6 +111,8 @@ async def get_overview() -> ComplianceOverviewOut:
                 appealId=appeal["id"] if appeal else None,
                 appealStatus=appeal["status"] if appeal else None,
                 appealResolution=appeal["resolution"] if appeal else None,
+                additionalInfoRequest=appeal["additionalInfoRequest"] if appeal else None,
+                employeeResponse=appeal["employeeResponse"] if appeal else None,
                 alertType=alert["alertType"],
                 severity=alert["severity"],
                 description=alert["description"],
@@ -115,7 +123,7 @@ async def get_overview() -> ComplianceOverviewOut:
 
     total_flags = len(records)
     resolved_appeals = sum(1 for a in appeals if a["status"] == "RESOLVED")
-    has_active_appeal = any(a["status"] in ("PENDING", "UNDER_REVIEW") for a in appeals)
+    has_active_appeal = any(a["status"] in ("PENDING", "UNDER_REVIEW", "AWAITING_INFO") for a in appeals)
 
     if has_active_appeal:
         standing = "UNDER_REVIEW"

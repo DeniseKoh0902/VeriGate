@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from app.schemas.appeal import AppealResolution, AppealSourceType, AppealStatus
 from app.schemas.prompt import RiskFindingOut
 
-FlagStatus = Literal["OPEN", "APPEAL_PENDING", "APPEAL_UNDER_REVIEW", "UPHELD", "OVERTURNED"]
+FlagStatus = Literal[
+    "OPEN", "APPEAL_PENDING", "APPEAL_UNDER_REVIEW", "APPEAL_AWAITING_INFO", "UPHELD", "OVERTURNED"
+]
 Standing = Literal["GOOD_STANDING", "NEEDS_ATTENTION", "UNDER_REVIEW"]
 
 
@@ -21,6 +23,8 @@ class ComplianceRecordOut(BaseModel):
     appealId: str | None
     appealStatus: AppealStatus | None
     appealResolution: AppealResolution | None
+    additionalInfoRequest: str | None = None
+    employeeResponse: str | None = None
 
     # Prompt Block detail
     promptText: str | None = None

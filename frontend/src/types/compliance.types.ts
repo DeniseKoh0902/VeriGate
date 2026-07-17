@@ -1,7 +1,13 @@
 export type ComplianceSourceType = 'PROMPT_BLOCK' | 'TOOL_REJECTION' | 'RISK_ALERT';
-export type FlagStatus = 'OPEN' | 'APPEAL_PENDING' | 'APPEAL_UNDER_REVIEW' | 'UPHELD' | 'OVERTURNED';
+export type FlagStatus =
+  | 'OPEN'
+  | 'APPEAL_PENDING'
+  | 'APPEAL_UNDER_REVIEW'
+  | 'APPEAL_AWAITING_INFO'
+  | 'UPHELD'
+  | 'OVERTURNED';
 export type ComplianceStanding = 'GOOD_STANDING' | 'NEEDS_ATTENTION' | 'UNDER_REVIEW';
-export type AppealStatus = 'PENDING' | 'UNDER_REVIEW' | 'RESOLVED';
+export type AppealStatus = 'PENDING' | 'UNDER_REVIEW' | 'AWAITING_INFO' | 'RESOLVED';
 export type AppealResolution = 'UPHELD' | 'OVERTURNED';
 
 export interface ComplianceRiskFinding {
@@ -21,6 +27,8 @@ export interface ComplianceRecord {
   appealId: string | null;
   appealStatus: AppealStatus | null;
   appealResolution: AppealResolution | null;
+  additionalInfoRequest: string | null;
+  employeeResponse: string | null;
 
   promptText: string | null;
   sanitizedText: string | null;

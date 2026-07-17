@@ -101,6 +101,64 @@ async def resolve_appeal(
         )
 
 
+async def request_more_info(
+    pool: asyncpg.Pool,
+    appeal_id: str,
+    *,
+    message: str,
+    requested_by_id: str,
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        updated = await conn.fetchrow(
+            """
+            UPDATE "appeals" SET
+                "status" = 'AWAITING_INFO',
+                "additionalInfoRequest" = $2,
+                "employeeResponse" = NULL,
+                "reviewedById" = $3
+            WHERE "id" = $1 AND "status" != 'RESOLVED'
+            RETURNING "id", "userId"
+            """,
+            appeal_id,
+            message,
+            requested_by_id,
+        )
+        if updated is None:
+            return None
+
+        return await conn.fetchrow(
+            """
+            SELECT a.*, u."name" AS "employeeName", u."email" AS "employeeEmail"
+            FROM "appeals" a
+            JOIN "users" u ON u."id" = a."userId"
+            WHERE a."id" = $1
+            """,
+            appeal_id,
+        )
+
+
+async def respond_to_info_request(
+    pool: asyncpg.Pool,
+    appeal_id: str,
+    *,
+    user_id: str,
+    response: str,
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            UPDATE "appeals" SET
+                "status" = 'UNDER_REVIEW',
+                "employeeResponse" = $3
+            WHERE "id" = $1 AND "userId" = $2 AND "status" = 'AWAITING_INFO'
+            RETURNING *
+            """,
+            appeal_id,
+            user_id,
+            response,
+        )
+
+
 async def create_appeal(
     pool: asyncpg.Pool,
     *,

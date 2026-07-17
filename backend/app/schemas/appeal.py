@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 AppealSourceType = Literal["PROMPT_BLOCK", "TOOL_REJECTION", "RISK_ALERT"]
-AppealStatus = Literal["PENDING", "UNDER_REVIEW", "RESOLVED"]
+AppealStatus = Literal["PENDING", "UNDER_REVIEW", "AWAITING_INFO", "RESOLVED"]
 AppealResolution = Literal["UPHELD", "OVERTURNED"]
 
 
@@ -25,6 +25,8 @@ class AppealOut(BaseModel):
     status: AppealStatus
     resolution: AppealResolution | None
     resolutionNotes: str | None
+    additionalInfoRequest: str | None
+    employeeResponse: str | None
     reviewedById: str | None
     slaDeadline: datetime | None
     createdAt: datetime
@@ -34,6 +36,14 @@ class AppealOut(BaseModel):
 class AppealResolveRequest(BaseModel):
     resolution: AppealResolution
     resolutionNotes: str | None = None
+
+
+class AppealRequestInfoRequest(BaseModel):
+    message: str
+
+
+class AppealRespondRequest(BaseModel):
+    response: str
 
 
 class AppealAdminOut(BaseModel):
@@ -49,6 +59,8 @@ class AppealAdminOut(BaseModel):
     status: AppealStatus
     resolution: AppealResolution | None
     resolutionNotes: str | None
+    additionalInfoRequest: str | None
+    employeeResponse: str | None
     slaDeadline: datetime | None
     createdAt: datetime
     resolvedAt: datetime | None
