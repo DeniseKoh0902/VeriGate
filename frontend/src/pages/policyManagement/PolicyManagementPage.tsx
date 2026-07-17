@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
+import { Pagination } from '@/components/ui/Pagination';
 import * as policyService from '@/services/policy.service';
 import { useToast } from '@/context/ToastContext';
+import { DEPARTMENTS } from '@/lib/departments';
 import type {
   Policy,
   PolicyCreateInput,
@@ -14,6 +16,8 @@ import type {
   SensitiveDataRule,
   SensitiveDataRuleCreateInput,
 } from '@/types/policy.types';
+
+const PAGE_SIZE = 5;
 
 const riskLevelBadge: Record<RiskLevel, 'good' | 'warning' | 'serious' | 'critical'> = {
   LOW: 'good',
@@ -46,12 +50,14 @@ const emptyRuleForm: SensitiveDataRuleCreateInput = {
   action: 'WARN',
 };
 
+type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE';
+const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
+
 export function PolicyManagementPage() {
   const toast = useToast();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [rules, setRules] = useState<SensitiveDataRule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const [policyForm, setPolicyForm] = useState<PolicyCreateInput | null>(null);
   const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
@@ -59,9 +65,19 @@ export function PolicyManagementPage() {
   const [ruleForm, setRuleForm] = useState<SensitiveDataRuleCreateInput | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
+  const [policyQuery, setPolicyQuery] = useState('');
+  const [policyDepartmentFilter, setPolicyDepartmentFilter] = useState<string>('ALL');
+  const [policySeverityFilter, setPolicySeverityFilter] = useState<string>('ALL');
+  const [policyStatusFilter, setPolicyStatusFilter] = useState<StatusFilter>('ALL');
+  const [policyPage, setPolicyPage] = useState(1);
+
+  const [ruleQuery, setRuleQuery] = useState('');
+  const [ruleRiskFilter, setRuleRiskFilter] = useState<RiskLevel | 'ALL'>('ALL');
+  const [ruleActionFilter, setRuleActionFilter] = useState<RuleAction | 'ALL'>('ALL');
+  const [rulePage, setRulePage] = useState(1);
+
   const loadData = async () => {
     setIsLoading(true);
-    setError(null);
     try {
       const [policyList, ruleList] = await Promise.all([
         policyService.listPolicies(),
@@ -70,7 +86,7 @@ export function PolicyManagementPage() {
       setPolicies(policyList);
       setRules(ruleList);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load policy data.');
+      toast.error(err instanceof Error ? err.message : 'Unable to load policy data.');
     } finally {
       setIsLoading(false);
     }
@@ -79,6 +95,51 @@ export function PolicyManagementPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const filteredPolicies = useMemo(() => {
+    const term = policyQuery.trim().toLowerCase();
+    return policies.filter((policy) => {
+      const matchesTerm =
+        !term ||
+        policy.name.toLowerCase().includes(term) ||
+        (policy.appliesToDepartment ?? '').toLowerCase().includes(term);
+      const matchesStatus =
+        policyStatusFilter === 'ALL' ||
+        (policyStatusFilter === 'ACTIVE' ? policy.isActive : !policy.isActive);
+      const matchesDepartment =
+        policyDepartmentFilter === 'ALL' || policy.appliesToDepartment === policyDepartmentFilter;
+      const matchesSeverity =
+        policySeverityFilter === 'ALL' || policy.severity === policySeverityFilter;
+      return matchesTerm && matchesStatus && matchesDepartment && matchesSeverity;
+    });
+  }, [policies, policyQuery, policyStatusFilter, policyDepartmentFilter, policySeverityFilter]);
+
+  const policyTotalPages = Math.max(1, Math.ceil(filteredPolicies.length / PAGE_SIZE));
+  const paginatedPolicies = filteredPolicies.slice(
+    (policyPage - 1) * PAGE_SIZE,
+    policyPage * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    if (policyPage > policyTotalPages) setPolicyPage(policyTotalPages);
+  }, [policyPage, policyTotalPages]);
+
+  const filteredRules = useMemo(() => {
+    const term = ruleQuery.trim().toLowerCase();
+    return rules.filter((rule) => {
+      const matchesTerm = !term || rule.category.toLowerCase().includes(term);
+      const matchesRisk = ruleRiskFilter === 'ALL' || rule.riskLevel === ruleRiskFilter;
+      const matchesAction = ruleActionFilter === 'ALL' || rule.action === ruleActionFilter;
+      return matchesTerm && matchesRisk && matchesAction;
+    });
+  }, [rules, ruleQuery, ruleRiskFilter, ruleActionFilter]);
+
+  const ruleTotalPages = Math.max(1, Math.ceil(filteredRules.length / PAGE_SIZE));
+  const paginatedRules = filteredRules.slice((rulePage - 1) * PAGE_SIZE, rulePage * PAGE_SIZE);
+
+  useEffect(() => {
+    if (rulePage > ruleTotalPages) setRulePage(ruleTotalPages);
+  }, [rulePage, ruleTotalPages]);
 
   const startCreatePolicy = () => {
     setEditingPolicyId(null);
@@ -180,15 +241,65 @@ export function PolicyManagementPage() {
         </Button>
       </div>
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
       <Card className="mb-6">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="font-semibold text-slate-900">AI Governance Policies</h2>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="w-72">
+            <Input
+              placeholder="Search by name or department"
+              leftIcon={<Search size={16} />}
+              value={policyQuery}
+              onChange={(e) => {
+                setPolicyQuery(e.target.value);
+                setPolicyPage(1);
+              }}
+            />
+          </div>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={policyDepartmentFilter}
+            onChange={(e) => {
+              setPolicyDepartmentFilter(e.target.value);
+              setPolicyPage(1);
+            }}
+          >
+            <option value="ALL">All Departments</option>
+            {DEPARTMENTS.map((department) => (
+              <option key={department} value={department}>
+                {department}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={policySeverityFilter}
+            onChange={(e) => {
+              setPolicySeverityFilter(e.target.value);
+              setPolicyPage(1);
+            }}
+          >
+            <option value="ALL">All Risk Levels</option>
+            {SEVERITIES.map((severity) => (
+              <option key={severity} value={severity}>
+                {severity}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={policyStatusFilter}
+            onChange={(e) => {
+              setPolicyStatusFilter(e.target.value as StatusFilter);
+              setPolicyPage(1);
+            }}
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
         </div>
 
         {policyForm && (
@@ -198,11 +309,18 @@ export function PolicyManagementPage() {
               value={policyForm.name}
               onChange={(e) => setPolicyForm({ ...policyForm, name: e.target.value })}
             />
-            <Input
-              placeholder="Applies to (e.g. Finance)"
-              value={policyForm.appliesToDepartment ?? ''}
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={policyForm.appliesToDepartment ?? 'All Departments'}
               onChange={(e) => setPolicyForm({ ...policyForm, appliesToDepartment: e.target.value })}
-            />
+            >
+              <option value="All Departments">All Departments</option>
+              {DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
             <select
               className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
               value={policyForm.severity}
@@ -240,14 +358,16 @@ export function PolicyManagementPage() {
             </tr>
           </thead>
           <tbody>
-            {!isLoading && policies.length === 0 && (
+            {!isLoading && paginatedPolicies.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
-                  No policies yet — create one to get started.
+                  {policies.length === 0
+                    ? 'No policies yet — create one to get started.'
+                    : 'No policies match your search/filter.'}
                 </td>
               </tr>
             )}
-            {policies.map((policy) => (
+            {paginatedPolicies.map((policy) => (
               <tr key={policy.id} className="border-t border-slate-100">
                 <td className="px-5 py-3 font-medium text-slate-900">{policy.name}</td>
                 <td className="px-5 py-3 text-slate-500">{policy.appliesToDepartment ?? '—'}</td>
@@ -279,6 +399,13 @@ export function PolicyManagementPage() {
             ))}
           </tbody>
         </table>
+
+        <Pagination
+          currentPage={policyPage}
+          totalPages={policyTotalPages}
+          onPageChange={setPolicyPage}
+          className="border-t border-slate-100"
+        />
       </Card>
 
       <Card>
@@ -288,6 +415,48 @@ export function PolicyManagementPage() {
             <Plus size={15} />
             Add Rule
           </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="w-72">
+            <Input
+              placeholder="Search by category"
+              leftIcon={<Search size={16} />}
+              value={ruleQuery}
+              onChange={(e) => {
+                setRuleQuery(e.target.value);
+                setRulePage(1);
+              }}
+            />
+          </div>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={ruleRiskFilter}
+            onChange={(e) => {
+              setRuleRiskFilter(e.target.value as RiskLevel | 'ALL');
+              setRulePage(1);
+            }}
+          >
+            <option value="ALL">All Risk Levels</option>
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="CRITICAL">Critical</option>
+          </select>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={ruleActionFilter}
+            onChange={(e) => {
+              setRuleActionFilter(e.target.value as RuleAction | 'ALL');
+              setRulePage(1);
+            }}
+          >
+            <option value="ALL">All Actions</option>
+            <option value="ALLOW">Allow</option>
+            <option value="WARN">Warn</option>
+            <option value="SANITIZE">Sanitize</option>
+            <option value="BLOCK">Block</option>
+          </select>
         </div>
 
         {ruleForm && (
@@ -338,14 +507,16 @@ export function PolicyManagementPage() {
             </tr>
           </thead>
           <tbody>
-            {!isLoading && rules.length === 0 && (
+            {!isLoading && paginatedRules.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">
-                  No sensitive data rules yet — add one to get started.
+                  {rules.length === 0
+                    ? 'No sensitive data rules yet — add one to get started.'
+                    : 'No rules match your search/filter.'}
                 </td>
               </tr>
             )}
-            {rules.map((rule) => (
+            {paginatedRules.map((rule) => (
               <tr key={rule.id} className="border-t border-slate-100">
                 <td className="px-5 py-3 font-medium text-slate-900">{rule.category}</td>
                 <td className="px-5 py-3">
@@ -376,6 +547,13 @@ export function PolicyManagementPage() {
             ))}
           </tbody>
         </table>
+
+        <Pagination
+          currentPage={rulePage}
+          totalPages={ruleTotalPages}
+          onPageChange={setRulePage}
+          className="border-t border-slate-100"
+        />
       </Card>
     </div>
   );
