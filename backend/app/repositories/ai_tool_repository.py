@@ -2,11 +2,22 @@ import uuid
 
 import asyncpg
 
+_LIST_SELECT = """
+    SELECT t.*, e."overallScore"
+    FROM "ai_tools" t
+    LEFT JOIN LATERAL (
+        SELECT "overallScore" FROM "ai_trust_evaluations" ev
+        WHERE ev."aiToolId" = t."id"
+        ORDER BY ev."evaluatedAt" DESC
+        LIMIT 1
+    ) e ON true
+"""
+
 
 async def get_or_create_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncpg.Record:
     """Looks up an AiTool by display name, creating a placeholder row if it
-    doesn't exist yet — AI Tool Management isn't connected to the backend
-    yet, so this stands in for a real registered/approved tool until it is."""
+    doesn't exist yet — lets AI Workspace reference a model name that hasn't
+    been formally registered through AI Tool Management."""
     async with pool.acquire() as conn:
         existing = await conn.fetchrow('SELECT * FROM "ai_tools" WHERE "name" = $1', name)
         if existing:
@@ -23,3 +34,96 @@ async def get_or_create_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncp
             name,
             "Unknown",
         )
+
+
+async def list_ai_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(f'{_LIST_SELECT} ORDER BY t."createdAt" DESC')
+
+
+async def get_ai_tool(pool: asyncpg.Pool, tool_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(f'{_LIST_SELECT} WHERE t."id" = $1', tool_id)
+
+
+async def create_ai_tool(
+    pool: asyncpg.Pool,
+    *,
+    name: str,
+    vendor: str,
+    version: str | None,
+    endpoint: str | None,
+    description: str | None,
+    risk_tier: str,
+) -> asyncpg.Record:
+    tool_id = str(uuid.uuid4())
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO "ai_tools"
+                ("id", "name", "vendor", "version", "endpoint", "description", "riskTier", "updatedAt")
+            VALUES ($1, $2, $3, $4, $5, $6, $7::"AiToolRiskTier", CURRENT_TIMESTAMP)
+            RETURNING *
+            """,
+            tool_id,
+            name,
+            vendor,
+            version,
+            endpoint,
+            description,
+            risk_tier,
+        )
+    return {**dict(row), "overallScore": None}
+
+
+async def update_ai_tool(
+    pool: asyncpg.Pool,
+    tool_id: str,
+    *,
+    vendor: str | None = None,
+    version: str | None = None,
+    endpoint: str | None = None,
+    description: str | None = None,
+    risk_tier: str | None = None,
+    is_approved: bool | None = None,
+    approved_by_id: str | None = None,
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE "ai_tools" SET
+                "vendor" = COALESCE($2, "vendor"),
+                "version" = COALESCE($3, "version"),
+                "endpoint" = COALESCE($4, "endpoint"),
+                "description" = COALESCE($5, "description"),
+                "riskTier" = COALESCE($6::"AiToolRiskTier", "riskTier"),
+                "isApproved" = CASE WHEN $6::"AiToolRiskTier" IS NOT NULL THEN $7 ELSE "isApproved" END,
+                "approvedById" = CASE WHEN $6::"AiToolRiskTier" IS NOT NULL THEN $8 ELSE "approvedById" END,
+                "approvedAt" = CASE
+                    WHEN $6::"AiToolRiskTier" IS NOT NULL AND $7 = true THEN CURRENT_TIMESTAMP
+                    WHEN $6::"AiToolRiskTier" IS NOT NULL AND $7 = false THEN NULL
+                    ELSE "approvedAt"
+                END,
+                "updatedAt" = CURRENT_TIMESTAMP
+            WHERE "id" = $1
+            RETURNING *
+            """,
+            tool_id,
+            vendor,
+            version,
+            endpoint,
+            description,
+            risk_tier,
+            is_approved,
+            approved_by_id,
+        )
+    if row is None:
+        return None
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(f'{_LIST_SELECT} WHERE t."id" = $1', tool_id)
+
+
+async def delete_ai_tool(pool: asyncpg.Pool, tool_id: str) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.execute('DELETE FROM "ai_tools" WHERE "id" = $1', tool_id)
+        return result != "DELETE 0"
