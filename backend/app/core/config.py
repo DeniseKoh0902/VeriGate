@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    gemini_api_key: str
+
 
 @lru_cache
 def get_settings() -> Settings:
