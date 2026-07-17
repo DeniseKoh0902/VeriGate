@@ -3,6 +3,14 @@ import uuid
 import asyncpg
 
 
+async def list_alerts_for_user(pool: asyncpg.Pool, user_id: str) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            'SELECT * FROM "risk_alerts" WHERE "userId" = $1 ORDER BY "createdAt" DESC',
+            user_id,
+        )
+
+
 async def create_risk_alert(
     pool: asyncpg.Pool,
     *,
