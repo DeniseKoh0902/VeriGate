@@ -1,11 +1,13 @@
 from fastapi import HTTPException, status
 
-from app.db.prisma import db
+from app.db.pool import get_pool
+from app.repositories.user_repository import get_user_by_email
 from app.schemas.auth import LoginRequest, TokenResponse
 
 
 async def authenticate_user(payload: LoginRequest) -> TokenResponse:
-    user = await db.user.find_unique(where={"email": payload.email})
+    pool = get_pool()
+    user = await get_user_by_email(pool, payload.email)
 
     if user is None:
         raise HTTPException(

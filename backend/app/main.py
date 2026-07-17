@@ -5,16 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.db.prisma import connect_db, disconnect_db
+from app.db.pool import connect_pool, disconnect_pool
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_db()
+    await connect_pool()
     yield
-    await disconnect_db()
+    await disconnect_pool()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

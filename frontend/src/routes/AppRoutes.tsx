@@ -5,6 +5,7 @@ import { AiToolManagementPage } from '@/pages/aiToolManagement';
 import { EmployeeManagementPage } from '@/pages/employeeManagement';
 import { PolicyManagementPage } from '@/pages/policyManagement';
 import { RiskAlertCenterPage } from '@/pages/riskAlertCenter';
+import { AppealQueuePage } from '@/pages/appealQueue';
 import { AuditLogsPage } from '@/pages/auditLogs';
 import { AiPolicyRecommendationPage } from '@/pages/aiPolicyRecommendation';
 import { GovernanceCopilotPage } from '@/pages/governanceCopilot';
@@ -24,6 +25,7 @@ export function AppRoutes() {
         <Route path="/employee-management" element={<EmployeeManagementPage />} />
         <Route path="/policy-management" element={<PolicyManagementPage />} />
         <Route path="/risk-alert-center" element={<RiskAlertCenterPage />} />
+        <Route path="/appeal-queue" element={<AppealQueuePage />} />
         <Route path="/audit-logs" element={<AuditLogsPage />} />
         <Route path="/ai-policy-recommendation" element={<AiPolicyRecommendationPage />} />
         <Route path="/governance-copilot" element={<GovernanceCopilotPage />} />

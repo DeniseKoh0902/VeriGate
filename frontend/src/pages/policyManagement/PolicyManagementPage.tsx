@@ -1,55 +1,170 @@
+import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
+import * as policyService from '@/services/policy.service';
+import { useToast } from '@/context/ToastContext';
+import type {
+  Policy,
+  PolicyCreateInput,
+  RiskLevel,
+  RuleAction,
+  SensitiveDataRule,
+  SensitiveDataRuleCreateInput,
+} from '@/types/policy.types';
 
-const policies = [
-  {
-    name: 'External LLM Usage Policy',
-    departments: 'All Departments',
-    riskLevel: 'High',
-    active: true,
-  },
-  {
-    name: 'Finance Data Handling Policy',
-    departments: 'Finance',
-    riskLevel: 'Critical',
-    active: true,
-  },
-  {
-    name: 'Source Code Assistant Policy',
-    departments: 'Engineering',
-    riskLevel: 'Medium',
-    active: true,
-  },
-  {
-    name: 'Legacy Model Deprecation Policy',
-    departments: 'All Departments',
-    riskLevel: 'Low',
-    active: false,
-  },
-];
+const riskLevelBadge: Record<RiskLevel, 'good' | 'warning' | 'serious' | 'critical'> = {
+  LOW: 'good',
+  MEDIUM: 'warning',
+  HIGH: 'serious',
+  CRITICAL: 'critical',
+};
 
-const sensitiveDataRules: {
-  category: string;
-  riskLevel: 'critical' | 'serious' | 'warning' | 'good';
-  action: 'Block' | 'Sanitize' | 'Warn' | 'Allow';
-}[] = [
-  { category: 'Personal Data (PII)', riskLevel: 'critical', action: 'Sanitize' },
-  { category: 'Financial Data', riskLevel: 'critical', action: 'Block' },
-  { category: 'Source Code', riskLevel: 'serious', action: 'Warn' },
-  { category: 'API Keys & Credentials', riskLevel: 'critical', action: 'Block' },
-  { category: 'Confidential Documents', riskLevel: 'serious', action: 'Sanitize' },
-];
+const actionBadge: Record<RuleAction, 'good' | 'warning' | 'serious' | 'critical'> = {
+  ALLOW: 'good',
+  WARN: 'warning',
+  SANITIZE: 'serious',
+  BLOCK: 'critical',
+};
 
-const actionBadge: Record<string, 'good' | 'warning' | 'serious' | 'critical'> = {
-  Allow: 'good',
-  Warn: 'warning',
-  Sanitize: 'serious',
-  Block: 'critical',
+function titleCase(value: string) {
+  return value.charAt(0) + value.slice(1).toLowerCase();
+}
+
+const emptyPolicyForm: PolicyCreateInput = {
+  name: '',
+  description: '',
+  severity: 'Medium',
+  appliesToDepartment: 'All Departments',
+};
+
+const emptyRuleForm: SensitiveDataRuleCreateInput = {
+  category: '',
+  riskLevel: 'MEDIUM',
+  action: 'WARN',
 };
 
 export function PolicyManagementPage() {
+  const toast = useToast();
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [rules, setRules] = useState<SensitiveDataRule[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [policyForm, setPolicyForm] = useState<PolicyCreateInput | null>(null);
+  const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
+
+  const [ruleForm, setRuleForm] = useState<SensitiveDataRuleCreateInput | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [policyList, ruleList] = await Promise.all([
+        policyService.listPolicies(),
+        policyService.listSensitiveDataRules(),
+      ]);
+      setPolicies(policyList);
+      setRules(ruleList);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load policy data.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const startCreatePolicy = () => {
+    setEditingPolicyId(null);
+    setPolicyForm(emptyPolicyForm);
+  };
+
+  const startEditPolicy = (policy: Policy) => {
+    setEditingPolicyId(policy.id);
+    setPolicyForm({
+      name: policy.name,
+      description: policy.description ?? '',
+      severity: policy.severity,
+      appliesToDepartment: policy.appliesToDepartment ?? '',
+    });
+  };
+
+  const savePolicy = async () => {
+    if (!policyForm) return;
+    try {
+      if (editingPolicyId) {
+        const updated = await policyService.updatePolicy(editingPolicyId, policyForm);
+        setPolicies((prev) => prev.map((p) => (p.id === editingPolicyId ? updated : p)));
+        toast.success('Policy updated successfully.');
+      } else {
+        const created = await policyService.createPolicy(policyForm);
+        setPolicies((prev) => [created, ...prev]);
+        toast.success('Policy created successfully.');
+      }
+      setPolicyForm(null);
+      setEditingPolicyId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save policy.');
+    }
+  };
+
+  const deletePolicy = async (id: string) => {
+    if (!window.confirm('Delete this policy?')) return;
+    try {
+      await policyService.deletePolicy(id);
+      setPolicies((prev) => prev.filter((p) => p.id !== id));
+      toast.success('Policy deleted.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to delete policy.');
+    }
+  };
+
+  const startCreateRule = () => {
+    setEditingRuleId(null);
+    setRuleForm(emptyRuleForm);
+  };
+
+  const startEditRule = (rule: SensitiveDataRule) => {
+    setEditingRuleId(rule.id);
+    setRuleForm({ category: rule.category, riskLevel: rule.riskLevel, action: rule.action });
+  };
+
+  const saveRule = async () => {
+    if (!ruleForm) return;
+    try {
+      if (editingRuleId) {
+        const updated = await policyService.updateSensitiveDataRule(editingRuleId, ruleForm);
+        setRules((prev) => prev.map((r) => (r.id === editingRuleId ? updated : r)));
+        toast.success('Rule updated successfully.');
+      } else {
+        const created = await policyService.createSensitiveDataRule(ruleForm);
+        setRules((prev) => [created, ...prev]);
+        toast.success('Rule created successfully.');
+      }
+      setRuleForm(null);
+      setEditingRuleId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save rule.');
+    }
+  };
+
+  const deleteRule = async (id: string) => {
+    if (!window.confirm('Delete this rule?')) return;
+    try {
+      await policyService.deleteSensitiveDataRule(id);
+      setRules((prev) => prev.filter((r) => r.id !== id));
+      toast.success('Rule deleted.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to delete rule.');
+    }
+  };
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-start justify-between">
@@ -59,16 +174,61 @@ export function PolicyManagementPage() {
             Configure organizational AI governance policies and sensitive data detection rules.
           </p>
         </div>
-        <Button className="w-auto">
+        <Button className="w-auto" onClick={startCreatePolicy}>
           <Plus size={16} />
           Create Policy
         </Button>
       </div>
 
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <Card className="mb-6">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="font-semibold text-slate-900">AI Governance Policies</h2>
         </div>
+
+        {policyForm && (
+          <div className="grid grid-cols-5 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+            <Input
+              placeholder="Policy name"
+              value={policyForm.name}
+              onChange={(e) => setPolicyForm({ ...policyForm, name: e.target.value })}
+            />
+            <Input
+              placeholder="Applies to (e.g. Finance)"
+              value={policyForm.appliesToDepartment ?? ''}
+              onChange={(e) => setPolicyForm({ ...policyForm, appliesToDepartment: e.target.value })}
+            />
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={policyForm.severity}
+              onChange={(e) => setPolicyForm({ ...policyForm, severity: e.target.value })}
+            >
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+              <option>Critical</option>
+            </select>
+            <Input
+              placeholder="Description"
+              value={policyForm.description ?? ''}
+              onChange={(e) => setPolicyForm({ ...policyForm, description: e.target.value })}
+            />
+            <div className="flex gap-2">
+              <Button className="w-auto" onClick={savePolicy} disabled={!policyForm.name}>
+                Save
+              </Button>
+              <Button variant="ghost" className="w-auto" onClick={() => setPolicyForm(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
@@ -80,22 +240,37 @@ export function PolicyManagementPage() {
             </tr>
           </thead>
           <tbody>
+            {!isLoading && policies.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
+                  No policies yet — create one to get started.
+                </td>
+              </tr>
+            )}
             {policies.map((policy) => (
-              <tr key={policy.name} className="border-t border-slate-100">
+              <tr key={policy.id} className="border-t border-slate-100">
                 <td className="px-5 py-3 font-medium text-slate-900">{policy.name}</td>
-                <td className="px-5 py-3 text-slate-500">{policy.departments}</td>
-                <td className="px-5 py-3 text-slate-500">{policy.riskLevel}</td>
+                <td className="px-5 py-3 text-slate-500">{policy.appliesToDepartment ?? '—'}</td>
+                <td className="px-5 py-3 text-slate-500">{policy.severity}</td>
                 <td className="px-5 py-3">
-                  <Badge status={policy.active ? 'good' : 'neutral'}>
-                    {policy.active ? 'Active' : 'Inactive'}
+                  <Badge status={policy.isActive ? 'good' : 'neutral'}>
+                    {policy.isActive ? 'Active' : 'Inactive'}
                   </Badge>
                 </td>
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-3 text-slate-400">
-                    <button aria-label="Edit policy" className="hover:text-slate-700">
+                    <button
+                      aria-label="Edit policy"
+                      className="hover:text-slate-700"
+                      onClick={() => startEditPolicy(policy)}
+                    >
                       <Pencil size={15} />
                     </button>
-                    <button aria-label="Delete policy" className="hover:text-red-600">
+                    <button
+                      aria-label="Delete policy"
+                      className="hover:text-red-600"
+                      onClick={() => deletePolicy(policy.id)}
+                    >
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -109,11 +284,50 @@ export function PolicyManagementPage() {
       <Card>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h2 className="font-semibold text-slate-900">Sensitive Data Rules</h2>
-          <Button variant="secondary" className="w-auto">
+          <Button variant="secondary" className="w-auto" onClick={startCreateRule}>
             <Plus size={15} />
             Add Rule
           </Button>
         </div>
+
+        {ruleForm && (
+          <div className="grid grid-cols-4 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+            <Input
+              placeholder="Category (e.g. Source Code)"
+              value={ruleForm.category}
+              onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value })}
+            />
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={ruleForm.riskLevel}
+              onChange={(e) => setRuleForm({ ...ruleForm, riskLevel: e.target.value as RiskLevel })}
+            >
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+              <option value="CRITICAL">Critical</option>
+            </select>
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={ruleForm.action}
+              onChange={(e) => setRuleForm({ ...ruleForm, action: e.target.value as RuleAction })}
+            >
+              <option value="ALLOW">Allow</option>
+              <option value="WARN">Warn</option>
+              <option value="SANITIZE">Sanitize</option>
+              <option value="BLOCK">Block</option>
+            </select>
+            <div className="flex gap-2">
+              <Button className="w-auto" onClick={saveRule} disabled={!ruleForm.category}>
+                Save
+              </Button>
+              <Button variant="ghost" className="w-auto" onClick={() => setRuleForm(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
@@ -124,23 +338,36 @@ export function PolicyManagementPage() {
             </tr>
           </thead>
           <tbody>
-            {sensitiveDataRules.map((rule) => (
-              <tr key={rule.category} className="border-t border-slate-100">
+            {!isLoading && rules.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">
+                  No sensitive data rules yet — add one to get started.
+                </td>
+              </tr>
+            )}
+            {rules.map((rule) => (
+              <tr key={rule.id} className="border-t border-slate-100">
                 <td className="px-5 py-3 font-medium text-slate-900">{rule.category}</td>
                 <td className="px-5 py-3">
-                  <Badge status={rule.riskLevel}>
-                    {rule.riskLevel === 'serious' ? 'High' : rule.riskLevel === 'critical' ? 'Critical' : 'Medium'}
-                  </Badge>
+                  <Badge status={riskLevelBadge[rule.riskLevel]}>{titleCase(rule.riskLevel)}</Badge>
                 </td>
                 <td className="px-5 py-3">
-                  <Badge status={actionBadge[rule.action]}>{rule.action}</Badge>
+                  <Badge status={actionBadge[rule.action]}>{titleCase(rule.action)}</Badge>
                 </td>
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-3 text-slate-400">
-                    <button aria-label="Edit rule" className="hover:text-slate-700">
+                    <button
+                      aria-label="Edit rule"
+                      className="hover:text-slate-700"
+                      onClick={() => startEditRule(rule)}
+                    >
                       <Pencil size={15} />
                     </button>
-                    <button aria-label="Delete rule" className="hover:text-red-600">
+                    <button
+                      aria-label="Delete rule"
+                      className="hover:text-red-600"
+                      onClick={() => deleteRule(rule.id)}
+                    >
                       <Trash2 size={15} />
                     </button>
                   </div>

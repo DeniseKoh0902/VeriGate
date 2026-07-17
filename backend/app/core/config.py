@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     database_url: str
+    direct_url: str
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
