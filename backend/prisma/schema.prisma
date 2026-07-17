@@ -22,6 +22,68 @@ enum AiToolRiskTier {
   BLOCKED
 }
 
+enum SessionStatus {
+  ACTIVE
+  ENDED
+}
+
+enum PromptStatus {
+  FORWARDED
+  BLOCKED
+  SANITIZED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RuleAction {
+  ALLOW
+  WARN
+  BLOCK
+  SANITIZE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AlertStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  ESCALATED
+}
+
+enum AppealSourceType {
+  PROMPT_BLOCK
+  TOOL_REJECTION
+  RISK_ALERT
+}
+
+enum AppealStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+}
+
+enum AppealResolution {
+  UPHELD
+  OVERTURNED
+}
+
+enum RecommendationStatus {
+  PENDING
+  ACCEPTED
+  MODIFIED
+  REJECTED
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -32,35 +94,245 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  aiUsageLogs AiUsageLog[]
+  approvedTools           AiTool[]
+  trustEvaluations        AiTrustEvaluation[]
+  sessions                AiSession[]
+  toolRequestsSubmitted   AiToolRequest[]         @relation("RequestSubmittedBy")
+  toolRequestsReviewed    AiToolRequest[]         @relation("RequestReviewedBy")
+  riskAlerts              RiskAlert[]
+  auditLogs               AuditLog[]
+  appealsFiled            Appeal[]                @relation("AppealFiledBy")
+  appealsReviewed         Appeal[]                @relation("AppealReviewedBy")
+  notifications           Notification[]
+  sensitiveDataRules      SensitiveDataRule[]
+  policiesCreated         Policy[]
+  recommendationsReviewed PolicyRecommendation[]
 
   @@map("users")
 }
 
 model AiTool {
-  id        String         @id @default(uuid())
-  name      String         @unique
-  vendor    String
-  riskTier  AiToolRiskTier @default(RESTRICTED)
-  isApproved Boolean       @default(false)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id           String         @id @default(uuid())
+  name         String         @unique
+  vendor       String
+  version      String?
+  endpoint     String?
+  description  String?
+  riskTier     AiToolRiskTier @default(RESTRICTED)
+  isApproved   Boolean        @default(false)
+  approvedById String?
+  approvedBy   User?          @relation(fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
-  usageLogs AiUsageLog[]
+  trustEvaluations  AiTrustEvaluation[]
+  sessions          AiSession[]
+  fulfilledRequests AiToolRequest[]
 
   @@map("ai_tools")
 }
 
-model AiUsageLog {
-  id        String   @id @default(uuid())
+model AiTrustEvaluation {
+  id                  String   @id @default(uuid())
+  aiToolId            String
+  aiTool              AiTool   @relation(fields: [aiToolId], references: [id])
+  securityScore       Int
+  privacyScore        Int
+  complianceScore     Int
+  availabilityScore   Int
+  explainabilityScore Int
+  orgPolicyScore      Int
+  overallScore        Int
+  evaluatedById       String
+  evaluatedBy         User     @relation(fields: [evaluatedById], references: [id])
+  evaluatedAt         DateTime @default(now())
+
+  @@map("ai_trust_evaluations")
+}
+
+model AiSession {
+  id        String        @id @default(uuid())
   userId    String
+  user      User          @relation(fields: [userId], references: [id])
   aiToolId  String
-  action    String
-  dataScope String
-  createdAt DateTime @default(now())
+  aiTool    AiTool        @relation(fields: [aiToolId], references: [id])
+  status    SessionStatus @default(ACTIVE)
+  startedAt DateTime      @default(now())
+  endedAt   DateTime?
 
-  user   User   @relation(fields: [userId], references: [id])
-  aiTool AiTool @relation(fields: [aiToolId], references: [id])
+  prompts Prompt[]
 
-  @@map("ai_usage_logs")
+  @@map("ai_sessions")
+}
+
+model Prompt {
+  id                    String       @id @default(uuid())
+  sessionId             String
+  session               AiSession    @relation(fields: [sessionId], references: [id])
+  promptText            String
+  sanitizedText         String?
+  containsSensitiveData Boolean      @default(false)
+  status                PromptStatus @default(FORWARDED)
+  createdAt             DateTime     @default(now())
+
+  riskFindings PromptRiskFinding[]
+  response     AiResponse?
+  riskAlerts   RiskAlert[]
+
+  @@map("prompts")
+}
+
+model PromptRiskFinding {
+  id        String             @id @default(uuid())
+  promptId  String
+  prompt    Prompt             @relation(fields: [promptId], references: [id])
+  ruleId    String?
+  rule      SensitiveDataRule? @relation(fields: [ruleId], references: [id])
+  category  String
+  riskLevel RiskLevel
+  note      String?
+
+  @@map("prompt_risk_findings")
+}
+
+model AiResponse {
+  id             String   @id @default(uuid())
+  promptId       String   @unique
+  prompt         Prompt   @relation(fields: [promptId], references: [id])
+  responseText   String
+  responseTimeMs Int?
+  tokenUsage     Int?
+  createdAt      DateTime @default(now())
+
+  @@map("ai_responses")
+}
+
+model SensitiveDataRule {
+  id          String     @id @default(uuid())
+  category    String
+  riskLevel   RiskLevel
+  action      RuleAction
+  isActive    Boolean    @default(true)
+  createdById String
+  createdBy   User       @relation(fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+
+  findings PromptRiskFinding[]
+
+  @@map("sensitive_data_rules")
+}
+
+model Policy {
+  id                  String   @id @default(uuid())
+  name                String
+  description         String?
+  severity            String
+  appliesToDepartment String?
+  isActive            Boolean  @default(true)
+  createdById         String
+  createdBy           User     @relation(fields: [createdById], references: [id])
+  createdAt           DateTime @default(now())
+
+  @@map("policies")
+}
+
+model AiToolRequest {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation("RequestSubmittedBy", fields: [userId], references: [id])
+  toolName        String
+  businessReason  String
+  department      String
+  status          RequestStatus @default(PENDING)
+  rejectionReason String?
+  approvedToolId  String?
+  approvedTool    AiTool?       @relation(fields: [approvedToolId], references: [id])
+  reviewedById    String?
+  reviewedBy      User?         @relation("RequestReviewedBy", fields: [reviewedById], references: [id])
+  submittedAt     DateTime      @default(now())
+  reviewedAt      DateTime?
+
+  @@map("ai_tool_requests")
+}
+
+model RiskAlert {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  promptId    String?
+  prompt      Prompt?     @relation(fields: [promptId], references: [id])
+  alertType   String
+  severity    String
+  description String?
+  status      AlertStatus @default(OPEN)
+  createdAt   DateTime    @default(now())
+
+  @@map("risk_alerts")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model Appeal {
+  id              String            @id @default(uuid())
+  // sourceId points at a Prompt, AiToolRequest, or RiskAlert row depending on
+  // sourceType. Prisma can't express a FK to three different tables, so this
+  // is validated at the application layer instead of the database layer.
+  sourceType      AppealSourceType
+  sourceId        String
+  userId          String
+  user            User              @relation("AppealFiledBy", fields: [userId], references: [id])
+  justification   String
+  evidenceUrl     String?
+  status          AppealStatus      @default(PENDING)
+  resolution      AppealResolution?
+  resolutionNotes String?
+  reviewedById    String?
+  reviewedBy      User?             @relation("AppealReviewedBy", fields: [reviewedById], references: [id])
+  slaDeadline     DateTime?
+  createdAt       DateTime          @default(now())
+  resolvedAt      DateTime?
+
+  @@map("appeals")
+}
+
+model Notification {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  title             String
+  message           String
+  type              String
+  relatedEntityType String?
+  relatedEntityId   String?
+  isRead            Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model PolicyRecommendation {
+  id              String               @id @default(uuid())
+  title           String
+  rationale       String
+  department      String?
+  confidenceScore Int
+  status          RecommendationStatus @default(PENDING)
+  generatedAt     DateTime             @default(now())
+  reviewedById    String?
+  reviewedBy      User?                @relation(fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+
+  @@map("policy_recommendations")
 }
