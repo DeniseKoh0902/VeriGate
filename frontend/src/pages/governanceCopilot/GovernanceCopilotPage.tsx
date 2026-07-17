@@ -1,23 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { Bot, User, SendHorizontal } from 'lucide-react';
+import { Bot, User, SendHorizontal, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
-
-interface Message {
-  role: 'user' | 'copilot';
-  text: string;
-}
-
-const initialMessages: Message[] = [
-  {
-    role: 'user',
-    text: 'Why did Gemini Pro drop from a Trust Score of 92 to 89 this week?',
-  },
-  {
-    role: 'copilot',
-    text: 'Gemini Pro\'s score dropped 3 points due to two flagged incidents: a delayed uptime response on 2026-07-14 (Availability -2) and a data-retention policy mismatch reported by the Legal department (Compliance -1). No security or privacy findings changed. Recommendation: keep Tier 2 approval, but monitor uptime over the next 7 days.',
-  },
-];
+import { askGovernanceCopilot } from '@/services/governanceCopilot.service';
+import type { ChatMessage } from '@/types/governanceCopilot.types';
 
 const suggestions = [
   'Summarize this week\'s policy violations',
@@ -26,25 +12,33 @@ const suggestions = [
 ];
 
 export function GovernanceCopilotPage() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const ask = (question: string) => {
-    if (!question.trim()) return;
-    setMessages((prev) => [
-      ...prev,
-      { role: 'user', text: question },
-      {
-        role: 'copilot',
-        text: 'Analyzing governance data, audit logs, and AI usage statistics… here is a summary based on the latest records, with supporting evidence available in Audit Logs.',
-      },
-    ]);
+  const ask = async (question: string) => {
+    if (!question.trim() || isLoading) return;
+
+    const nextMessages: ChatMessage[] = [...messages, { role: 'user', text: question }];
+    setMessages(nextMessages);
     setDraft('');
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const reply = await askGovernanceCopilot(nextMessages);
+      setMessages((prev) => [...prev, reply]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    ask(draft);
+    void ask(draft);
   };
 
   return (
@@ -58,6 +52,11 @@ export function GovernanceCopilotPage() {
 
       <Card className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          {messages.length === 0 && (
+            <p className="text-sm text-slate-400">
+              Ask a question below or pick a suggestion to get started.
+            </p>
+          )}
           {messages.map((message, index) => (
             <div
               key={index}
@@ -83,6 +82,13 @@ export function GovernanceCopilotPage() {
               </div>
             </div>
           ))}
+          {isLoading && (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Loader2 size={15} className="animate-spin" />
+              Thinking…
+            </div>
+          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
 
         <div className="border-t border-slate-100 p-4">
@@ -91,8 +97,9 @@ export function GovernanceCopilotPage() {
               <button
                 key={suggestion}
                 type="button"
-                onClick={() => ask(suggestion)}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-blue-300 hover:text-blue-600"
+                onClick={() => void ask(suggestion)}
+                disabled={isLoading}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-blue-300 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {suggestion}
               </button>
@@ -104,12 +111,14 @@ export function GovernanceCopilotPage() {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Ask the Governance Copilot…"
+              disabled={isLoading}
               className="w-full rounded-full border border-slate-300 px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
             />
             <button
               type="submit"
               aria-label="Send"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800"
+              disabled={isLoading}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <SendHorizontal size={16} />
             </button>
