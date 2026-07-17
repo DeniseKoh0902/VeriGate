@@ -14,10 +14,10 @@ export function EmployeeLayout() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
       <TopHeader userName="Employee User" />
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         <aside className="flex w-64 shrink-0 flex-col bg-slate-900">
           <nav className="flex-1 space-y-1 px-3 py-4">
             {navItems.map(({ label, path, icon: Icon }) => (
@@ -52,7 +52,7 @@ export function EmployeeLayout() {
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </div>
       </div>

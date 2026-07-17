@@ -118,3 +118,30 @@ async def get_or_create_system_user(pool: asyncpg.Pool) -> str:
             "IT Infrastructure",
         )
         return new_id
+
+
+async def get_or_create_demo_employee(pool: asyncpg.Pool) -> str:
+    """Returns the id of a placeholder employee to attribute AI Workspace
+    activity to, until real authentication issues a session for the
+    logged-in employee."""
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            'SELECT "id" FROM "users" WHERE "email" = $1',
+            "demo.employee@verigate.local",
+        )
+        if existing:
+            return existing["id"]
+
+        new_id = str(uuid.uuid4())
+        await conn.execute(
+            """
+            INSERT INTO "users" ("id", "email", "passwordHash", "name", "department", "role", "updatedAt")
+            VALUES ($1, $2, $3, $4, $5, 'EMPLOYEE', CURRENT_TIMESTAMP)
+            """,
+            new_id,
+            "demo.employee@verigate.local",
+            "unusable",
+            "Demo Employee",
+            "Finance",
+        )
+        return new_id

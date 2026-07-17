@@ -8,6 +8,13 @@ async def list_sensitive_data_rules(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return await conn.fetch('SELECT * FROM "sensitive_data_rules" ORDER BY "createdAt" DESC')
 
 
+async def list_active_rules(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Rules actually enforced against submitted prompts — inactive rules
+    are configured but intentionally not applied."""
+    async with pool.acquire() as conn:
+        return await conn.fetch('SELECT * FROM "sensitive_data_rules" WHERE "isActive" = true')
+
+
 async def create_sensitive_data_rule(
     pool: asyncpg.Pool,
     *,
