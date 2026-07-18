@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     audit_logs,
     auth,
     compliance,
+    contact,
     governance_copilot,
     policies,
     prompts,
@@ -26,3 +27,4 @@ api_router.include_router(appeals.router)
 api_router.include_router(compliance.router)
 api_router.include_router(risk_alerts.router)
 api_router.include_router(audit_logs.router)
+api_router.include_router(contact.router)

@@ -2,6 +2,11 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from '@/pages/auth/Login';
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPassword';
 import { ResetPasswordPage } from '@/pages/auth/ResetPassword';
+import { HelpCenterPage } from '@/pages/helpCenter';
+import { PrivacyPolicyPage } from '@/pages/privacyPolicy';
+import { TermsOfServicePage } from '@/pages/termsOfService';
+import { SupportPage } from '@/pages/support';
+import { ContactItPage } from '@/pages/contactIt';
 import { DashboardPage } from '@/pages/dashboard';
 import { AiToolManagementPage } from '@/pages/aiToolManagement';
 import { EmployeeManagementPage } from '@/pages/employeeManagement';
@@ -23,6 +28,11 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/help-center" element={<HelpCenterPage />} />
+      <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+      <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+      <Route path="/support" element={<SupportPage />} />
+      <Route path="/contact-it" element={<ContactItPage />} />
 
       <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'COMPLIANCE']} />}>
         <Route element={<AdminLayout />}>

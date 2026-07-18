@@ -1,12 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { roleHomePath } from '@/lib/roleHome';
 import type { Role } from '@/types/user.types';
-
-const roleHomePath: Record<Role, string> = {
-  ADMIN: '/dashboard',
-  COMPLIANCE: '/dashboard',
-  EMPLOYEE: '/workspace',
-};
 
 interface ProtectedRouteProps {
   allowedRoles: Role[];

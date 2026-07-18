@@ -50,10 +50,18 @@ npm install
 npm run dev
 ```
 
-Runs at `http://localhost:5173`. The frontend works fully standalone — no backend or database
-needed. On the login screen, pick **IT Infrastructure** or **Employee** to view either dashboard
-directly (login currently routes by role selection rather than a live credential check, since real
-auth depends on the backend below).
+Runs at `http://localhost:5173`. Login is now a real credential check (bcrypt + JWT) against the
+shared Supabase database, so the **backend must be running** (see below) before you can sign in — the
+frontend can no longer be used fully standalone. Two seeded test accounts exist in the shared DB for
+local dev:
+
+| Role | Email | Password |
+|---|---|---|
+| Admin (→ `/dashboard`) | `test.admin@verigate.com` | `Test1234!` |
+| Employee (→ `/workspace`) | `test.employee@verigate.com` | `Test1234!` |
+
+Routing after login is automatic based on the account's real role — there's no manual role picker
+anymore.
 
 ### Backend
 
@@ -89,6 +97,22 @@ reachable from outside the team.
 | `DATABASE_URL` | Supabase pooled connection string (port 6543, `pgbouncer=true`) |
 | `DIRECT_URL` | Supabase direct connection string (port 5432), used for migrations |
 | `JWT_SECRET` | Secret used to sign auth tokens |
+| `JWT_ALGORITHM` | Signing algorithm for JWTs. Optional, defaults to `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | How long a login session's access token lasts. Optional, defaults to `60` |
+| `CORS_ORIGINS` | Allowed frontend origins, as a JSON array. Optional, defaults to `["http://localhost:5173"]` |
+| `FRONTEND_URL` | Base URL used to build the link inside password-reset emails |
+| `GEMINI_API_KEY` | Free-tier key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey), used by Governance Copilot, the AI Workspace, and AI Tool trust evaluations |
+| `EMAIL_HOST` | SMTP host used to send forgot/reset-password emails (e.g. `smtp.gmail.com`) |
+| `EMAIL_PORT` | SMTP port. Optional, defaults to `587` (STARTTLS) |
+| `SENDER_EMAIL` | Mailbox address the reset email is sent from |
+| `SENDER_EMAIL_PW` | Password for `SENDER_EMAIL`. **For Gmail this must be an App Password** (Google Account → Security → 2-Step Verification → App passwords) — Gmail rejects plain SMTP auth with a normal account password |
+| `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | How long a password-reset link stays valid. Optional, defaults to `30` |
+
+`GEMINI_API_KEY`, `EMAIL_HOST`, `SENDER_EMAIL`, and `SENDER_EMAIL_PW` are **required, not optional** —
+the backend fails to start at all without them, even if you're not touching AI features or password
+reset. If you just pulled and the backend won't boot, this is almost always why: fill in all four in
+your local `backend/.env` (pull real values from a teammate rather than inventing your own Gmail App
+Password, unless you want reset emails to come from your own inbox).
 
 `backend/.env` is your **personal, local-only** copy — every teammate creates their own from
 `.env.example` and fills in real Supabase credentials (see the `cp .env.example .env` step above).

@@ -27,6 +27,17 @@ async def get_user_by_id(pool: asyncpg.Pool, user_id: str) -> asyncpg.Record | N
         )
 
 
+async def list_admin_contacts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT "name", "email" FROM "users"
+            WHERE "role" = 'ADMIN' AND "isActive" = true
+            ORDER BY "name"
+            """
+        )
+
+
 async def list_users(pool: asyncpg.Pool) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         return await conn.fetch(

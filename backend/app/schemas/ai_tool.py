@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
+
+from app.schemas.common import UtcDatetime
 
 AiToolRiskTier = Literal["APPROVED", "RESTRICTED", "BLOCKED"]
 
@@ -33,9 +34,9 @@ class AiToolOut(BaseModel):
     riskTier: AiToolRiskTier
     isApproved: bool
     approvedById: str | None
-    approvedAt: datetime | None
-    createdAt: datetime
-    updatedAt: datetime
+    approvedAt: UtcDatetime | None
+    createdAt: UtcDatetime
+    updatedAt: UtcDatetime
     overallScore: int | None
 
 
@@ -70,4 +71,4 @@ class AiTrustEvaluationOut(BaseModel):
     orgPolicyScore: int
     overallScore: int
     evaluatedById: str
-    evaluatedAt: datetime
+    evaluatedAt: UtcDatetime
