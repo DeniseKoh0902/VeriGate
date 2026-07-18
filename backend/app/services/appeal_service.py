@@ -1,10 +1,26 @@
+import time
+
 import asyncpg
 from fastapi import HTTPException, status
 
 from app.db.pool import get_pool
-from app.repositories import ai_tool_request_repository, appeal_repository, prompt_repository, risk_alert_repository
-from app.schemas.appeal import AppealAdminOut, AppealCreate, AppealOut, AppealResolveRequest
-from app.services import incident_service
+from app.repositories import (
+    ai_tool_request_repository,
+    appeal_repository,
+    notification_repository,
+    prompt_repository,
+    risk_alert_repository,
+)
+from app.schemas.appeal import (
+    AppealAdminOut,
+    AppealCreate,
+    AppealOut,
+    AppealRequestInfoRequest,
+    AppealResolveRequest,
+    AppealRespondRequest,
+)
+from app.schemas.prompt import RiskFindingOut
+from app.services import incident_service, prompt_service
 
 # Maps an appeal's sourceType to (how to fetch the underlying record, how to
 # describe it). Prisma can't express a real FK across three source tables
@@ -28,8 +44,53 @@ async def _describe_appeal_source(pool: asyncpg.Pool, appeal: asyncpg.Record) ->
     return describe(source)
 
 
+async def _resolve_prompt_id(pool: asyncpg.Pool, appeal: asyncpg.Record) -> str | None:
+    """RISK_ALERT (and legacy PROMPT_BLOCK) appeals both trace back to a
+    Prompt row — RISK_ALERT indirectly via the alert's promptId. Used both to
+    unblock an overturned prompt and to surface the original prompt text to
+    reviewers in the appeal queue."""
+    if appeal["sourceType"] == "PROMPT_BLOCK":
+        return appeal["sourceId"]
+    if appeal["sourceType"] == "RISK_ALERT":
+        alert = await risk_alert_repository.get_alert_by_id(pool, appeal["sourceId"])
+        return alert["promptId"] if alert else None
+    return None
+
+
+async def _unblock_prompt_if_overturned(pool: asyncpg.Pool, appeal: asyncpg.Record) -> None:
+    """When a prompt-block appeal is overturned, the original decision was a
+    false positive: the prompt should have been answered. Generate the AI
+    response now so the employee can see it back in the AI Workspace, without
+    touching the prompt's BLOCKED status or the compliance/appeal records,
+    which stay as-is for audit purposes."""
+    prompt_id = await _resolve_prompt_id(pool, appeal)
+    if prompt_id is None:
+        return
+
+    prompt = await prompt_repository.get_prompt_by_id(pool, prompt_id)
+    if prompt is None or prompt["status"] != "BLOCKED":
+        return
+
+    if await prompt_repository.get_ai_response_by_prompt_id(pool, prompt_id) is not None:
+        return
+
+    start = time.perf_counter()
+    response_text = await prompt_service.generate_ai_response(prompt["promptText"])
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    await prompt_repository.create_ai_response(
+        pool,
+        prompt_id=prompt_id,
+        response_text=response_text,
+        response_time_ms=elapsed_ms,
+    )
+
+
 async def _to_admin_out(pool: asyncpg.Pool, row: asyncpg.Record) -> AppealAdminOut:
     description = await _describe_appeal_source(pool, row)
+
+    prompt_id = await _resolve_prompt_id(pool, row)
+    prompt = await prompt_repository.get_prompt_by_id(pool, prompt_id) if prompt_id else None
+
     return AppealAdminOut(
         id=row["id"],
         sourceType=row["sourceType"],
@@ -43,9 +104,18 @@ async def _to_admin_out(pool: asyncpg.Pool, row: asyncpg.Record) -> AppealAdminO
         status=row["status"],
         resolution=row["resolution"],
         resolutionNotes=row["resolutionNotes"],
+        additionalInfoRequest=row["additionalInfoRequest"],
+        employeeResponse=row["employeeResponse"],
         slaDeadline=row["slaDeadline"],
         createdAt=row["createdAt"],
         resolvedAt=row["resolvedAt"],
+        promptText=prompt["promptText"] if prompt else None,
+        riskFindings=[
+            RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
+            for f in prompt["riskFindings"]
+        ]
+        if prompt
+        else [],
     )
 
 
@@ -68,7 +138,58 @@ async def resolve_appeal(
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appeal not found.")
+
+    if row["resolution"] == "OVERTURNED":
+        await _unblock_prompt_if_overturned(pool, row)
+
     return await _to_admin_out(pool, row)
+
+
+async def request_more_info(
+    appeal_id: str, payload: AppealRequestInfoRequest, reviewer_id: str
+) -> AppealAdminOut:
+    pool = get_pool()
+    row = await appeal_repository.request_more_info(
+        pool,
+        appeal_id,
+        message=payload.message,
+        requested_by_id=reviewer_id,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Appeal not found, or it has already been resolved.",
+        )
+
+    await notification_repository.create_notification(
+        pool,
+        user_id=row["userId"],
+        title="Your appeal requires additional information",
+        message=payload.message,
+        notification_type="APPEAL_INFO_REQUESTED",
+        related_entity_type="Appeal",
+        related_entity_id=appeal_id,
+    )
+
+    return await _to_admin_out(pool, row)
+
+
+async def respond_to_info_request(
+    appeal_id: str, payload: AppealRespondRequest, user_id: str
+) -> AppealOut:
+    pool = get_pool()
+    row = await appeal_repository.respond_to_info_request(
+        pool,
+        appeal_id,
+        user_id=user_id,
+        response=payload.response,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This appeal isn't awaiting additional information from you.",
+        )
+    return AppealOut(**dict(row))
 
 
 async def list_my_appeals(user_id: str) -> list[AppealOut]:

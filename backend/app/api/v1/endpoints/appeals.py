@@ -1,7 +1,14 @@
 from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_current_user, require_roles
-from app.schemas.appeal import AppealAdminOut, AppealCreate, AppealOut, AppealResolveRequest
+from app.schemas.appeal import (
+    AppealAdminOut,
+    AppealCreate,
+    AppealOut,
+    AppealRequestInfoRequest,
+    AppealResolveRequest,
+    AppealRespondRequest,
+)
 from app.schemas.user import UserOut
 from app.services import appeal_service
 
@@ -38,3 +45,21 @@ async def resolve_appeal(
     current_user: UserOut = Depends(_require_governance),
 ) -> AppealAdminOut:
     return await appeal_service.resolve_appeal(appeal_id, payload, current_user.id)
+
+
+@router.patch("/{appeal_id}/request-info", response_model=AppealAdminOut)
+async def request_more_info(
+    appeal_id: str,
+    payload: AppealRequestInfoRequest,
+    current_user: UserOut = Depends(_require_governance),
+) -> AppealAdminOut:
+    return await appeal_service.request_more_info(appeal_id, payload, current_user.id)
+
+
+@router.patch("/{appeal_id}/respond", response_model=AppealOut)
+async def respond_to_info_request(
+    appeal_id: str,
+    payload: AppealRespondRequest,
+    current_user: UserOut = Depends(get_current_user),
+) -> AppealOut:
+    return await appeal_service.respond_to_info_request(appeal_id, payload, current_user.id)

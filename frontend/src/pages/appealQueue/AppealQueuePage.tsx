@@ -1,15 +1,24 @@
-import { useEffect, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, X, MessageCircleQuestion, Paperclip } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  MessageCircleQuestion,
+  Paperclip,
+  Search,
+} from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/context/ToastContext';
 import * as appealService from '@/services/appeal.service';
 import type { AppealAdmin } from '@/types/appeal.types';
 import type { ComplianceSourceType } from '@/types/compliance.types';
 
-type DisplayStatus = 'PENDING' | 'UNDER_REVIEW' | 'OVERDUE' | 'RESOLVED';
+type DisplayStatus = 'PENDING' | 'UNDER_REVIEW' | 'AWAITING_INFO' | 'OVERDUE' | 'RESOLVED';
 
 const sourceTypeLabel: Record<ComplianceSourceType, string> = {
   PROMPT_BLOCK: 'Prompt Block',
@@ -20,6 +29,7 @@ const sourceTypeLabel: Record<ComplianceSourceType, string> = {
 const statusBadge: Record<DisplayStatus, 'critical' | 'warning' | 'good' | 'neutral'> = {
   PENDING: 'warning',
   UNDER_REVIEW: 'neutral',
+  AWAITING_INFO: 'warning',
   OVERDUE: 'critical',
   RESOLVED: 'good',
 };
@@ -27,15 +37,26 @@ const statusBadge: Record<DisplayStatus, 'critical' | 'warning' | 'good' | 'neut
 const statusLabel: Record<DisplayStatus, string> = {
   PENDING: 'Pending',
   UNDER_REVIEW: 'Under Review',
+  AWAITING_INFO: 'Awaiting Info',
   OVERDUE: 'Overdue',
   RESOLVED: 'Resolved',
 };
 
 function getDisplayStatus(appeal: AppealAdmin): DisplayStatus {
   if (appeal.status === 'RESOLVED') return 'RESOLVED';
+  if (appeal.status === 'AWAITING_INFO') return 'AWAITING_INFO';
   if (appeal.slaDeadline && new Date(appeal.slaDeadline) < new Date()) return 'OVERDUE';
   return appeal.status;
 }
+
+const statusFilters: (DisplayStatus | 'All')[] = [
+  'All',
+  'PENDING',
+  'UNDER_REVIEW',
+  'AWAITING_INFO',
+  'OVERDUE',
+  'RESOLVED',
+];
 
 function shortId(id: string) {
   return `APL-${id.slice(0, 8).toUpperCase()}`;
@@ -56,7 +77,12 @@ export function AppealQueuePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [isResolving, setIsResolving] = useState(false);
+  const [isRequestingInfo, setIsRequestingInfo] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
+  const [isSubmittingInfo, setIsSubmittingInfo] = useState(false);
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<DisplayStatus | 'All'>('All');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadAppeals = async () => {
     setIsLoading(true);
@@ -83,9 +109,46 @@ export function AppealQueuePage() {
 
   const selected = appeals.find((appeal) => appeal.id === selectedId) ?? null;
 
-  const totalPages = Math.max(1, Math.ceil(appeals.length / APPEALS_PER_PAGE));
+  const searchMatched = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+    if (!term) return appeals;
+
+    return appeals.filter((appeal) => {
+      const haystack = [appeal.title, appeal.employeeName, appeal.policy ?? '', shortId(appeal.id)]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [appeals, searchQuery]);
+
+  const sectionCounts = useMemo(() => {
+    const counts: Record<DisplayStatus | 'All', number> = {
+      All: searchMatched.length,
+      PENDING: 0,
+      UNDER_REVIEW: 0,
+      AWAITING_INFO: 0,
+      OVERDUE: 0,
+      RESOLVED: 0,
+    };
+    for (const appeal of searchMatched) {
+      counts[getDisplayStatus(appeal)] += 1;
+    }
+    return counts;
+  }, [searchMatched]);
+
+  const filtered = useMemo(() => {
+    return filter === 'All'
+      ? searchMatched
+      : searchMatched.filter((appeal) => getDisplayStatus(appeal) === filter);
+  }, [searchMatched, filter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / APPEALS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
-  const pagedAppeals = appeals.slice(
+  const pagedAppeals = filtered.slice(
     (currentPage - 1) * APPEALS_PER_PAGE,
     currentPage * APPEALS_PER_PAGE,
   );
@@ -93,6 +156,8 @@ export function AppealQueuePage() {
   const selectAppeal = (id: string) => {
     setSelectedId(id);
     setNotes('');
+    setIsRequestingInfo(false);
+    setInfoMessage('');
   };
 
   const resolve = async (resolution: 'UPHELD' | 'OVERTURNED') => {
@@ -114,6 +179,25 @@ export function AppealQueuePage() {
     }
   };
 
+  const requestMoreInfo = async () => {
+    if (!selected || !infoMessage.trim() || isSubmittingInfo) return;
+
+    setIsSubmittingInfo(true);
+    try {
+      const updated = await appealService.requestMoreInfo(selected.id, {
+        message: infoMessage.trim(),
+      });
+      setAppeals((prev) => prev.map((appeal) => (appeal.id === updated.id ? updated : appeal)));
+      setInfoMessage('');
+      setIsRequestingInfo(false);
+      toast.success('Requested more information from the employee.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to request more information.');
+    } finally {
+      setIsSubmittingInfo(false);
+    }
+  };
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -132,9 +216,36 @@ export function AppealQueuePage() {
 
       <div className="grid grid-cols-3 gap-6">
         <Card className="col-span-2 divide-y divide-slate-100">
-          {!isLoading && appeals.length === 0 && (
+          <div className="px-5 py-4">
+            <Input
+              placeholder="Search appeals by employee, title, or policy…"
+              leftIcon={<Search size={16} />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-1 px-5 py-3">
+            {statusFilters.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFilter(value)}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  filter === value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100',
+                )}
+              >
+                {value === 'All' ? 'All' : statusLabel[value]} ({sectionCounts[value]})
+              </button>
+            ))}
+          </div>
+
+          {!isLoading && filtered.length === 0 && (
             <div className="px-5 py-8 text-center text-sm text-slate-400">
-              No appeals to review.
+              {searchQuery.trim() || filter !== 'All'
+                ? 'No appeals match your search.'
+                : 'No appeals to review.'}
             </div>
           )}
           {pagedAppeals.map((appeal) => {
@@ -224,6 +335,17 @@ export function AppealQueuePage() {
                 </div>
               </dl>
 
+              {selected.promptText && (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Prompt Sent
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                    {selected.promptText}
+                  </p>
+                </div>
+              )}
+
               <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Employee justification
               </p>
@@ -245,42 +367,100 @@ export function AppealQueuePage() {
                     {selected.resolutionNotes ?? 'No resolution notes were provided.'}
                   </p>
                 </div>
+              ) : selected.status === 'AWAITING_INFO' ? (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                    Waiting on employee response
+                  </p>
+                  <p className="mt-1 text-sm text-amber-900">{selected.additionalInfoRequest}</p>
+                </div>
               ) : (
                 <>
-                  <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Resolution notes
-                  </p>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    placeholder="Explain the reasoning behind your decision…"
-                    className="mt-1 w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                  />
+                  {selected.employeeResponse && (
+                    <div className="mt-4 rounded-lg bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Employee's response
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">{selected.employeeResponse}</p>
+                    </div>
+                  )}
 
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                      className="w-auto"
-                      isLoading={isResolving}
-                      onClick={() => resolve('OVERTURNED')}
-                    >
-                      <Check size={15} />
-                      Overturn
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="w-auto"
-                      isLoading={isResolving}
-                      onClick={() => resolve('UPHELD')}
-                    >
-                      <X size={15} />
-                      Uphold
-                    </Button>
-                    <Button variant="ghost" className="w-auto">
-                      <MessageCircleQuestion size={15} />
-                      Request More Info
-                    </Button>
-                  </div>
+                  {isRequestingInfo ? (
+                    <>
+                      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Additional information required
+                      </p>
+                      <textarea
+                        value={infoMessage}
+                        onChange={(e) => setInfoMessage(e.target.value)}
+                        rows={3}
+                        placeholder="Please provide evidence that the detected API key is a placeholder and not a production key…"
+                        className="mt-1 w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                      />
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          className="w-auto"
+                          isLoading={isSubmittingInfo}
+                          disabled={!infoMessage.trim()}
+                          onClick={requestMoreInfo}
+                        >
+                          <MessageCircleQuestion size={15} />
+                          Send Request
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="w-auto"
+                          onClick={() => {
+                            setIsRequestingInfo(false);
+                            setInfoMessage('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Resolution notes
+                      </p>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        rows={3}
+                        placeholder="Explain the reasoning behind your decision…"
+                        className="mt-1 w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                      />
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          className="w-auto"
+                          isLoading={isResolving}
+                          onClick={() => resolve('OVERTURNED')}
+                        >
+                          <Check size={15} />
+                          Overturn
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          className="w-auto"
+                          isLoading={isResolving}
+                          onClick={() => resolve('UPHELD')}
+                        >
+                          <X size={15} />
+                          Uphold
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="w-auto"
+                          onClick={() => setIsRequestingInfo(true)}
+                        >
+                          <MessageCircleQuestion size={15} />
+                          Request More Info
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>

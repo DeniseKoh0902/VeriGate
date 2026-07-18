@@ -21,13 +21,17 @@ def _flag_status_for_appeal(appeal: asyncpg.Record | None) -> FlagStatus:
         return "APPEAL_PENDING"
     if appeal["status"] == "UNDER_REVIEW":
         return "APPEAL_UNDER_REVIEW"
+    if appeal["status"] == "AWAITING_INFO":
+        return "APPEAL_AWAITING_INFO"
     return "OVERTURNED" if appeal["resolution"] == "OVERTURNED" else "UPHELD"
 
 
 async def get_overview(user_id: str) -> ComplianceOverviewOut:
     pool = get_pool()
 
-    prompts = await prompt_repository.list_prompts_for_user(pool, user_id)
+    prompts_by_id = {
+        p["id"]: p for p in await prompt_repository.list_prompts_for_user(pool, user_id)
+    }
     tool_requests = await ai_tool_request_repository.list_requests_by_user(pool, user_id)
     risk_alerts = await risk_alert_repository.list_alerts_for_user(pool, user_id)
     appeals = await appeal_repository.list_appeals_by_user(pool, user_id)
@@ -35,33 +39,6 @@ async def get_overview(user_id: str) -> ComplianceOverviewOut:
     appeals_by_source = {(a["sourceType"], a["sourceId"]): a for a in appeals}
 
     records: list[ComplianceRecordOut] = []
-
-    for prompt in prompts:
-        if prompt["status"] != "BLOCKED":
-            continue
-        appeal = appeals_by_source.get(("PROMPT_BLOCK", prompt["id"]))
-        risk_findings = prompt["riskFindings"]
-        description = incident_service.describe_prompt_block(prompt)
-        records.append(
-            ComplianceRecordOut(
-                id=prompt["id"],
-                sourceType="PROMPT_BLOCK",
-                title=description["title"],
-                policy=description["policy"],
-                date=prompt["createdAt"],
-                flagStatus=_flag_status_for_appeal(appeal),
-                appealable=appeal is None,
-                appealId=appeal["id"] if appeal else None,
-                appealStatus=appeal["status"] if appeal else None,
-                appealResolution=appeal["resolution"] if appeal else None,
-                promptText=prompt["promptText"],
-                sanitizedText=prompt["sanitizedText"],
-                riskFindings=[
-                    RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
-                    for f in risk_findings
-                ],
-            )
-        )
 
     for req in tool_requests:
         if req["status"] != "REJECTED":
@@ -80,6 +57,8 @@ async def get_overview(user_id: str) -> ComplianceOverviewOut:
                 appealId=appeal["id"] if appeal else None,
                 appealStatus=appeal["status"] if appeal else None,
                 appealResolution=appeal["resolution"] if appeal else None,
+                additionalInfoRequest=appeal["additionalInfoRequest"] if appeal else None,
+                employeeResponse=appeal["employeeResponse"] if appeal else None,
                 toolName=req["toolName"],
                 businessReason=req["businessReason"],
                 department=req["department"],
@@ -88,7 +67,15 @@ async def get_overview(user_id: str) -> ComplianceOverviewOut:
         )
 
     for alert in risk_alerts:
+        # A risk alert raised from a blocked prompt used to also surface as a
+        # separate "Prompt Block" record for the same incident. They're now
+        # merged into a single Risk Alert record; fall back to an appeal
+        # filed under the old PROMPT_BLOCK source so it still shows as
+        # already-appealed instead of appealable again.
+        prompt = prompts_by_id.get(alert["promptId"])
         appeal = appeals_by_source.get(("RISK_ALERT", alert["id"]))
+        if appeal is None and prompt is not None:
+            appeal = appeals_by_source.get(("PROMPT_BLOCK", prompt["id"]))
         description = incident_service.describe_risk_alert(alert)
         records.append(
             ComplianceRecordOut(
@@ -102,6 +89,15 @@ async def get_overview(user_id: str) -> ComplianceOverviewOut:
                 appealId=appeal["id"] if appeal else None,
                 appealStatus=appeal["status"] if appeal else None,
                 appealResolution=appeal["resolution"] if appeal else None,
+                additionalInfoRequest=appeal["additionalInfoRequest"] if appeal else None,
+                employeeResponse=appeal["employeeResponse"] if appeal else None,
+                promptText=prompt["promptText"] if prompt else None,
+                riskFindings=[
+                    RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
+                    for f in prompt["riskFindings"]
+                ]
+                if prompt
+                else [],
                 alertType=alert["alertType"],
                 severity=alert["severity"],
                 description=alert["description"],
@@ -111,8 +107,16 @@ async def get_overview(user_id: str) -> ComplianceOverviewOut:
     records.sort(key=lambda r: r.date, reverse=True)
 
     total_flags = len(records)
-    resolved_appeals = sum(1 for a in appeals if a["status"] == "RESOLVED")
-    has_active_appeal = any(a["status"] in ("PENDING", "UNDER_REVIEW") for a in appeals)
+    # Derived from the displayed records (each has at most one attached
+    # appeal) rather than the raw appeals table: a prompt block merged into
+    # a Risk Alert can have a leftover, superseded appeal filed under the old
+    # PROMPT_BLOCK source that no longer backs any visible flag, and counting
+    # straight from `appeals` would double-count it.
+    resolved_appeals = sum(1 for r in records if r.flagStatus in ("UPHELD", "OVERTURNED"))
+    has_active_appeal = any(
+        r.flagStatus in ("APPEAL_PENDING", "APPEAL_UNDER_REVIEW", "APPEAL_AWAITING_INFO")
+        for r in records
+    )
 
     if has_active_appeal:
         standing = "UNDER_REVIEW"

@@ -31,7 +31,7 @@ _SYSTEM_INSTRUCTION = (
 )
 
 
-async def _generate_ai_response(prompt_text: str) -> str:
+async def generate_ai_response(prompt_text: str) -> str:
     try:
         client = get_gemini_client()
         response = await client.aio.models.generate_content(
@@ -116,7 +116,7 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     response_text = None
     if final_text is not None:
         start = time.perf_counter()
-        response_text = await _generate_ai_response(final_text)
+        response_text = await generate_ai_response(final_text)
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         await prompt_repository.create_ai_response(
             pool,

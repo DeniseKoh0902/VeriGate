@@ -69,6 +69,7 @@ enum AppealSourceType {
 enum AppealStatus {
   PENDING
   UNDER_REVIEW
+  AWAITING_INFO
   RESOLVED
 }
 
@@ -98,12 +99,12 @@ model User {
   approvedTools           AiTool[]
   trustEvaluations        AiTrustEvaluation[]
   sessions                AiSession[]
-  toolRequestsSubmitted   AiToolRequest[]         @relation("RequestSubmittedBy")
-  toolRequestsReviewed    AiToolRequest[]         @relation("RequestReviewedBy")
+  toolRequestsSubmitted   AiToolRequest[]        @relation("RequestSubmittedBy")
+  toolRequestsReviewed    AiToolRequest[]        @relation("RequestReviewedBy")
   riskAlerts              RiskAlert[]
   auditLogs               AuditLog[]
-  appealsFiled            Appeal[]                @relation("AppealFiledBy")
-  appealsReviewed         Appeal[]                @relation("AppealReviewedBy")
+  appealsFiled            Appeal[]               @relation("AppealFiledBy")
+  appealsReviewed         Appeal[]               @relation("AppealReviewedBy")
   notifications           Notification[]
   sensitiveDataRules      SensitiveDataRule[]
   policiesCreated         Policy[]
@@ -286,24 +287,26 @@ model AuditLog {
 }
 
 model Appeal {
-  id              String            @id @default(uuid())
+  id                    String            @id @default(uuid())
   // sourceId points at a Prompt, AiToolRequest, or RiskAlert row depending on
   // sourceType. Prisma can't express a FK to three different tables, so this
   // is validated at the application layer instead of the database layer.
-  sourceType      AppealSourceType
-  sourceId        String
-  userId          String
-  user            User              @relation("AppealFiledBy", fields: [userId], references: [id])
-  justification   String
-  evidenceUrl     String?
-  status          AppealStatus      @default(PENDING)
-  resolution      AppealResolution?
-  resolutionNotes String?
-  reviewedById    String?
-  reviewedBy      User?             @relation("AppealReviewedBy", fields: [reviewedById], references: [id])
-  slaDeadline     DateTime?
-  createdAt       DateTime          @default(now())
-  resolvedAt      DateTime?
+  sourceType            AppealSourceType
+  sourceId              String
+  userId                String
+  user                  User              @relation("AppealFiledBy", fields: [userId], references: [id])
+  justification         String
+  evidenceUrl           String?
+  status                AppealStatus      @default(PENDING)
+  resolution            AppealResolution?
+  resolutionNotes       String?
+  additionalInfoRequest String?
+  employeeResponse      String?
+  reviewedById          String?
+  reviewedBy            User?             @relation("AppealReviewedBy", fields: [reviewedById], references: [id])
+  slaDeadline           DateTime?
+  createdAt             DateTime          @default(now())
+  resolvedAt            DateTime?
 
   @@map("appeals")
 }
