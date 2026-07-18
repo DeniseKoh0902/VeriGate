@@ -60,6 +60,12 @@ const RESULT_RULES: Record<string, { prefix: string; tone: ResultTone }[]> = {
     { prefix: 'Employee Removed', tone: 'warning' },
   ],
   AiToolRequest: [{ prefix: 'AI Tool Request Submitted', tone: 'neutral' }],
+  PolicyRecommendation: [
+    { prefix: 'Policy Recommendation Accepted', tone: 'good' },
+    { prefix: 'Policy Recommendation Modified', tone: 'good' },
+    { prefix: 'Policy Recommendation Rejected', tone: 'warning' },
+    { prefix: 'Policy Recommendation Generated', tone: 'neutral' },
+  ],
 };
 
 function resultTone(entityType: string, action: string): ResultTone {
@@ -90,6 +96,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   SensitiveDataRule: 'Sensitive Data Rules',
   Policy: 'Policies',
   User: 'Employees',
+  PolicyRecommendation: 'Policy Recommendations',
 };
 
 function entityTypeLabel(entityType: string) {
@@ -163,7 +170,8 @@ function AuditLogDetailContent({ detail }: { detail: AuditLogDetail }) {
     detail.policyName ||
     detail.category ||
     detail.targetRole ||
-    detail.toolName;
+    detail.toolName ||
+    detail.recommendationTitle;
 
   if (!hasAnyDetail) {
     return <p className="text-sm text-slate-400">No further detail was recorded for this event.</p>;
@@ -246,6 +254,20 @@ function AuditLogDetailContent({ detail }: { detail: AuditLogDetail }) {
       {detail.responseText && (
         <DetailField label="AI Response">
           <p className="whitespace-pre-wrap">{detail.responseText}</p>
+        </DetailField>
+      )}
+      {detail.recommendationTitle && (
+        <DetailField label="Policy Recommendation">
+          <p>{detail.recommendationTitle}</p>
+          {detail.recommendationRationale && (
+            <p className="mt-0.5 text-xs text-slate-500">{detail.recommendationRationale}</p>
+          )}
+          <p className="mt-0.5 text-xs text-slate-500">
+            Status: {detail.recommendationStatus}
+            {detail.recommendationDepartment && ` · Applies to: ${detail.recommendationDepartment}`}
+            {detail.recommendationConfidenceScore !== null &&
+              ` · ${detail.recommendationConfidenceScore}% confidence`}
+          </p>
         </DetailField>
       )}
     </div>

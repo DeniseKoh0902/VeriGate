@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
 
 from app.schemas.appeal import AppealResolution, AppealStatus
+from app.schemas.common import UtcDatetime
 from app.schemas.prompt import RiskFindingOut
 
 RiskAlertStatus = Literal["OPEN", "RESOLVED", "ESCALATED"]
@@ -15,7 +15,7 @@ class RiskAlertAdminOut(BaseModel):
     severity: str
     description: str | None
     status: RiskAlertStatus
-    createdAt: datetime
+    createdAt: UtcDatetime
     employeeName: str
     employeeEmail: str
     aiToolName: str | None

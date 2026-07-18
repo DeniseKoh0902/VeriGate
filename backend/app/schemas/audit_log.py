@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel
 
+from app.schemas.common import UtcDatetime
 from app.schemas.prompt import RiskFindingOut
 
 
@@ -10,7 +9,7 @@ class AuditLogOut(BaseModel):
     action: str
     entityType: str
     entityId: str
-    createdAt: datetime
+    createdAt: UtcDatetime
 
     # Null when the log has no attached user (e.g. a failed login against an
     # email with no matching account).
@@ -67,3 +66,10 @@ class AuditLogDetailOut(AuditLogOut):
     # AiToolRequest (and Appeal logs on a TOOL_REJECTION source)
     toolName: str | None = None
     businessReason: str | None = None
+
+    # PolicyRecommendation
+    recommendationTitle: str | None = None
+    recommendationRationale: str | None = None
+    recommendationDepartment: str | None = None
+    recommendationStatus: str | None = None
+    recommendationConfidenceScore: int | None = None
