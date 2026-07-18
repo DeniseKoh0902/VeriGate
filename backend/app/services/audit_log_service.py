@@ -8,6 +8,7 @@ from app.repositories import (
     ai_tool_request_repository,
     appeal_repository,
     audit_log_repository,
+    policy_recommendation_repository,
     policy_repository,
     prompt_repository,
     risk_alert_repository,
@@ -129,5 +130,14 @@ async def get_log_detail(log_id: str) -> AuditLogDetailOut:
         if request is not None:
             fields["toolName"] = request["toolName"]
             fields["businessReason"] = request["businessReason"]
+
+    elif entity_type == "PolicyRecommendation":
+        recommendation = await policy_recommendation_repository.get_by_id(pool, entity_id)
+        if recommendation is not None:
+            fields["recommendationTitle"] = recommendation["title"]
+            fields["recommendationRationale"] = recommendation["rationale"]
+            fields["recommendationDepartment"] = recommendation["department"]
+            fields["recommendationStatus"] = recommendation["status"]
+            fields["recommendationConfidenceScore"] = recommendation["confidenceScore"]
 
     return AuditLogDetailOut(**dict(row), **fields)

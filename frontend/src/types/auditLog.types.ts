@@ -50,4 +50,11 @@ export interface AuditLogDetail extends AuditLog {
   // AiToolRequest (and Appeal logs on a TOOL_REJECTION source)
   toolName: string | null;
   businessReason: string | null;
+
+  // PolicyRecommendation
+  recommendationTitle: string | null;
+  recommendationRationale: string | null;
+  recommendationDepartment: string | null;
+  recommendationStatus: string | null;
+  recommendationConfidenceScore: number | null;
 }
