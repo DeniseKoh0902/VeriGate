@@ -120,6 +120,23 @@ async def list_prompts_for_user(pool: asyncpg.Pool, user_id: str) -> list[asyncp
     ]
 
 
+async def get_prompt_by_id(pool: asyncpg.Pool, prompt_id: str) -> dict | None:
+    async with pool.acquire() as conn:
+        prompt = await conn.fetchrow(
+            'SELECT "id", "promptText", "sanitizedText", "status", "createdAt" FROM "prompts" WHERE "id" = $1',
+            prompt_id,
+        )
+        if prompt is None:
+            return None
+
+        findings = await conn.fetch(
+            'SELECT "category", "riskLevel", "note" FROM "prompt_risk_findings" WHERE "promptId" = $1',
+            prompt_id,
+        )
+
+    return {**dict(prompt), "riskFindings": findings}
+
+
 async def create_ai_response(
     pool: asyncpg.Pool,
     *,

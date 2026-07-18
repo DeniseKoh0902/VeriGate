@@ -2,8 +2,10 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     ai_tool_requests,
+    appeals,
     ai_tools,
     auth,
+    compliance,
     governance_copilot,
     policies,
     prompts,
@@ -18,3 +20,5 @@ api_router.include_router(users.router)
 api_router.include_router(prompts.router)
 api_router.include_router(governance_copilot.router)
 api_router.include_router(ai_tools.router)
+api_router.include_router(appeals.router)
+api_router.include_router(compliance.router)

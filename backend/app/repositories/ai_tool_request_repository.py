@@ -11,6 +11,11 @@ async def list_requests_by_user(pool: asyncpg.Pool, user_id: str) -> list[asyncp
         )
 
 
+async def get_request_by_id(pool: asyncpg.Pool, request_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM "ai_tool_requests" WHERE "id" = $1', request_id)
+
+
 async def create_request(
     pool: asyncpg.Pool,
     *,
