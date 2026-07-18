@@ -137,6 +137,13 @@ async def get_prompt_by_id(pool: asyncpg.Pool, prompt_id: str) -> dict | None:
     return {**dict(prompt), "riskFindings": findings}
 
 
+async def get_ai_response_by_prompt_id(pool: asyncpg.Pool, prompt_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            'SELECT * FROM "ai_responses" WHERE "promptId" = $1', prompt_id
+        )
+
+
 async def create_ai_response(
     pool: asyncpg.Pool,
     *,

@@ -17,7 +17,6 @@ import type {
 
 const filters: { value: ComplianceSourceType | 'All'; label: string }[] = [
   { value: 'All', label: 'All' },
-  { value: 'PROMPT_BLOCK', label: 'Prompt Block' },
   { value: 'TOOL_REJECTION', label: 'Tool Rejection' },
   { value: 'RISK_ALERT', label: 'Risk Alert' },
 ];
@@ -26,6 +25,7 @@ const flagStatusBadge: Record<FlagStatus, 'good' | 'warning' | 'critical' | 'neu
   OPEN: 'warning',
   APPEAL_PENDING: 'neutral',
   APPEAL_UNDER_REVIEW: 'neutral',
+  APPEAL_AWAITING_INFO: 'warning',
   UPHELD: 'critical',
   OVERTURNED: 'good',
 };
@@ -34,6 +34,7 @@ const flagStatusLabel: Record<FlagStatus, string> = {
   OPEN: 'Open',
   APPEAL_PENDING: 'Appeal Pending',
   APPEAL_UNDER_REVIEW: 'Under Review',
+  APPEAL_AWAITING_INFO: 'Awaiting Your Response',
   UPHELD: 'Upheld',
   OVERTURNED: 'Overturned',
 };
@@ -63,6 +64,10 @@ export function MyComplianceOverviewPage() {
   const [justification, setJustification] = useState('');
   const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const [respondTargetId, setRespondTargetId] = useState<string | null>(null);
+  const [responseText, setResponseText] = useState('');
+  const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
 
   const loadOverview = async () => {
     setIsLoading(true);
@@ -162,6 +167,36 @@ export function MyComplianceOverviewPage() {
       toast.error(err instanceof Error ? err.message : 'Unable to submit appeal.');
     } finally {
       setIsSubmittingAppeal(false);
+    }
+  };
+
+  const openRespondForm = (record: ComplianceRecord) => {
+    setRespondTargetId(record.id);
+    setResponseText('');
+  };
+
+  const cancelRespondForm = () => {
+    setRespondTargetId(null);
+    setResponseText('');
+  };
+
+  const submitResponse = async (event: FormEvent, record: ComplianceRecord) => {
+    event.preventDefault();
+    if (!responseText.trim() || !record.appealId || isSubmittingResponse) return;
+
+    setIsSubmittingResponse(true);
+    try {
+      await appealService.respondToInfoRequest(record.appealId, {
+        response: responseText.trim(),
+      });
+      toast.success('Response submitted for review.');
+      setRespondTargetId(null);
+      setResponseText('');
+      await loadOverview();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to submit your response.');
+    } finally {
+      setIsSubmittingResponse(false);
     }
   };
 
@@ -271,37 +306,25 @@ export function MyComplianceOverviewPage() {
                       Submit Appeal
                     </Button>
                   )}
+                  {record.flagStatus === 'APPEAL_AWAITING_INFO' && respondTargetId !== record.id && (
+                    <Button variant="secondary" className="w-auto" onClick={() => openRespondForm(record)}>
+                      Respond
+                    </Button>
+                  )}
                 </div>
               </div>
 
+              {record.flagStatus === 'APPEAL_AWAITING_INFO' && record.additionalInfoRequest && (
+                <div className="mt-3 ml-6 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                    Compliance officer requested
+                  </p>
+                  <p className="mt-1 text-sm text-amber-900">{record.additionalInfoRequest}</p>
+                </div>
+              )}
+
               {isExpanded && (
                 <div className="mt-3 ml-6 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                  {record.sourceType === 'PROMPT_BLOCK' && (
-                    <>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Prompt Sent
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap text-slate-700">{record.promptText}</p>
-                      {record.riskFindings.length > 0 && (
-                        <>
-                          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Detected
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {record.riskFindings.map((finding, index) => (
-                              <span
-                                key={index}
-                                className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700"
-                              >
-                                {finding.category} · {finding.riskLevel}
-                              </span>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-
                   {record.sourceType === 'TOOL_REJECTION' && (
                     <>
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -325,12 +348,35 @@ export function MyComplianceOverviewPage() {
 
                   {record.sourceType === 'RISK_ALERT' && (
                     <>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Alert Details
-                      </p>
-                      <p className="mt-1 text-slate-700">{record.description ?? record.alertType}</p>
+                      {record.promptText && (
+                        <>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Prompt Sent
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-slate-700">{record.promptText}</p>
+                        </>
+                      )}
+
+                      {record.riskFindings.length > 0 && (
+                        <>
+                          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Detected Rule
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {record.riskFindings.map((finding, index) => (
+                              <span
+                                key={index}
+                                className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700"
+                              >
+                                {finding.category} · {finding.riskLevel}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
                       {record.severity && (
-                        <p className="mt-2 text-xs text-slate-500">
+                        <p className="mt-3 text-xs text-slate-500">
                           Severity: <span className="font-medium text-slate-700">{record.severity}</span>
                         </p>
                       )}
@@ -365,6 +411,38 @@ export function MyComplianceOverviewPage() {
                       Submit
                     </Button>
                     <Button type="button" variant="ghost" className="w-auto" onClick={cancelAppealForm}>
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {respondTargetId === record.id && (
+                <form
+                  className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                  onSubmit={(e) => submitResponse(e, record)}
+                >
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Your response
+                  </label>
+                  <textarea
+                    value={responseText}
+                    onChange={(e) => setResponseText(e.target.value)}
+                    rows={3}
+                    placeholder="Provide the information the compliance officer requested…"
+                    required
+                    className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      type="submit"
+                      className="w-auto"
+                      isLoading={isSubmittingResponse}
+                      disabled={!responseText.trim()}
+                    >
+                      Submit
+                    </Button>
+                    <Button type="button" variant="ghost" className="w-auto" onClick={cancelRespondForm}>
                       Cancel
                     </Button>
                   </div>
