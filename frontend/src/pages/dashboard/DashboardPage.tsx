@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Filter, RefreshCw, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -97,9 +98,9 @@ export function DashboardPage() {
             Real-time health telemetry and governance status across all integrated AI models.
           </p>
         </div>
-        <a href="#help-center" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+        <Link to="/help-center" className="text-sm font-medium text-blue-600 hover:text-blue-700">
           Help Center
-        </a>
+        </Link>
       </div>
 
       <div className="grid grid-cols-4 gap-4">

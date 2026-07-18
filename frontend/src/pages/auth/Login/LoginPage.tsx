@@ -6,16 +6,10 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
+import { roleHomePath } from '@/lib/roleHome';
 import type { LoginFormValues } from '@/types/auth.types';
-import type { Role } from '@/types/user.types';
 
 const initialValues: LoginFormValues = { email: '', password: '' };
-
-const roleHomePath: Record<Role, string> = {
-  ADMIN: '/dashboard',
-  COMPLIANCE: '/dashboard',
-  EMPLOYEE: '/workspace',
-};
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -115,9 +109,9 @@ export function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Don't have an account?{' '}
-          <a href="#contact-it" className="font-medium text-blue-600 hover:text-blue-700">
+          <Link to="/contact-it" className="font-medium text-blue-600 hover:text-blue-700">
             Contact IT Infrastructure
-          </a>
+          </Link>
         </p>
       </Card>
     </AuthLayout>
