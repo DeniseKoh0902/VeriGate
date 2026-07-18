@@ -1,5 +1,6 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
+from app.core.dependencies import require_roles
 from app.schemas.policy import (
     PolicyCreate,
     PolicyOut,
@@ -8,9 +9,16 @@ from app.schemas.policy import (
     SensitiveDataRuleOut,
     SensitiveDataRuleUpdate,
 )
+from app.schemas.user import UserOut
 from app.services import policy_service
 
-router = APIRouter(prefix="/policies", tags=["policies"])
+router = APIRouter(
+    prefix="/policies",
+    tags=["policies"],
+    dependencies=[Depends(require_roles("ADMIN", "COMPLIANCE"))],
+)
+
+_require_governance = require_roles("ADMIN", "COMPLIANCE")
 
 
 # Static "/sensitive-data-rules..." paths are registered before the
@@ -26,8 +34,11 @@ async def get_sensitive_data_rules() -> list[SensitiveDataRuleOut]:
     response_model=SensitiveDataRuleOut,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_sensitive_data_rule(payload: SensitiveDataRuleCreate) -> SensitiveDataRuleOut:
-    return await policy_service.create_sensitive_data_rule(payload)
+async def create_sensitive_data_rule(
+    payload: SensitiveDataRuleCreate,
+    current_user: UserOut = Depends(_require_governance),
+) -> SensitiveDataRuleOut:
+    return await policy_service.create_sensitive_data_rule(payload, current_user.id)
 
 
 @router.patch("/sensitive-data-rules/{rule_id}", response_model=SensitiveDataRuleOut)
@@ -48,8 +59,10 @@ async def get_policies() -> list[PolicyOut]:
 
 
 @router.post("", response_model=PolicyOut, status_code=status.HTTP_201_CREATED)
-async def create_policy(payload: PolicyCreate) -> PolicyOut:
-    return await policy_service.create_policy(payload)
+async def create_policy(
+    payload: PolicyCreate, current_user: UserOut = Depends(_require_governance)
+) -> PolicyOut:
+    return await policy_service.create_policy(payload, current_user.id)
 
 
 @router.patch("/{policy_id}", response_model=PolicyOut)

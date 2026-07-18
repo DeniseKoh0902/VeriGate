@@ -1,5 +1,6 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
+from app.core.dependencies import require_roles
 from app.schemas.ai_tool import (
     AiToolCreate,
     AiToolOut,
@@ -8,9 +9,16 @@ from app.schemas.ai_tool import (
     AiTrustEvaluationOut,
     AiTrustEvaluationProposal,
 )
+from app.schemas.user import UserOut
 from app.services import ai_tool_service
 
-router = APIRouter(prefix="/ai-tools", tags=["ai-tools"])
+router = APIRouter(
+    prefix="/ai-tools",
+    tags=["ai-tools"],
+    dependencies=[Depends(require_roles("ADMIN", "COMPLIANCE"))],
+)
+
+_require_governance = require_roles("ADMIN", "COMPLIANCE")
 
 
 @router.get("", response_model=list[AiToolOut])
@@ -44,9 +52,11 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
     status_code=status.HTTP_201_CREATED,
 )
 async def approve_trust_evaluation(
-    tool_id: str, payload: AiTrustEvaluationCreate
+    tool_id: str,
+    payload: AiTrustEvaluationCreate,
+    current_user: UserOut = Depends(_require_governance),
 ) -> AiTrustEvaluationOut:
-    return await ai_tool_service.approve_trust_evaluation(tool_id, payload)
+    return await ai_tool_service.approve_trust_evaluation(tool_id, payload, current_user.id)
 
 
 @router.get("/{tool_id}/trust-evaluations/latest", response_model=AiTrustEvaluationOut | None)

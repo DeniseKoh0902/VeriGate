@@ -12,7 +12,6 @@ from app.repositories import (
     risk_alert_repository,
     sensitive_data_rule_repository,
 )
-from app.repositories.user_repository import get_or_create_demo_employee
 from app.schemas.prompt import (
     PromptHistoryItem,
     PromptSubmitRequest,
@@ -48,11 +47,9 @@ async def _generate_ai_response(prompt_text: str) -> str:
         return "Unable to reach the AI model right now. Please try again."
 
 
-async def submit_prompt(payload: PromptSubmitRequest) -> PromptSubmitResponse:
+async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSubmitResponse:
     pool = get_pool()
 
-    # TODO: replace with the authenticated employee's user id once real login is wired up.
-    user_id = await get_or_create_demo_employee(pool)
     ai_tool = await ai_tool_repository.get_or_create_ai_tool_by_name(pool, payload.aiToolName)
     session_id = await prompt_repository.get_or_create_active_session(pool, user_id, ai_tool["id"])
 
@@ -144,11 +141,9 @@ async def submit_prompt(payload: PromptSubmitRequest) -> PromptSubmitResponse:
     )
 
 
-async def get_prompt_history() -> list[PromptHistoryItem]:
+async def get_prompt_history(user_id: str) -> list[PromptHistoryItem]:
     pool = get_pool()
 
-    # TODO: replace with the authenticated employee's user id once real login is wired up.
-    user_id = await get_or_create_demo_employee(pool)
     rows = await prompt_repository.list_prompts_for_user(pool, user_id)
 
     return [

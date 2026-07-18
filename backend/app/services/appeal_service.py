@@ -3,7 +3,6 @@ from fastapi import HTTPException, status
 
 from app.db.pool import get_pool
 from app.repositories import ai_tool_request_repository, appeal_repository, prompt_repository, risk_alert_repository
-from app.repositories.user_repository import get_or_create_demo_employee, get_or_create_system_user
 from app.schemas.appeal import AppealAdminOut, AppealCreate, AppealOut, AppealResolveRequest
 from app.services import incident_service
 
@@ -56,10 +55,10 @@ async def list_all_appeals() -> list[AppealAdminOut]:
     return [await _to_admin_out(pool, row) for row in rows]
 
 
-async def resolve_appeal(appeal_id: str, payload: AppealResolveRequest) -> AppealAdminOut:
+async def resolve_appeal(
+    appeal_id: str, payload: AppealResolveRequest, reviewer_id: str
+) -> AppealAdminOut:
     pool = get_pool()
-    # TODO: replace with the authenticated admin's user id once real login is wired up.
-    reviewer_id = await get_or_create_system_user(pool)
     row = await appeal_repository.resolve_appeal(
         pool,
         appeal_id,
@@ -72,18 +71,14 @@ async def resolve_appeal(appeal_id: str, payload: AppealResolveRequest) -> Appea
     return await _to_admin_out(pool, row)
 
 
-async def list_my_appeals() -> list[AppealOut]:
+async def list_my_appeals(user_id: str) -> list[AppealOut]:
     pool = get_pool()
-    # TODO: replace with the authenticated employee's user id once real login is wired up.
-    user_id = await get_or_create_demo_employee(pool)
     rows = await appeal_repository.list_appeals_by_user(pool, user_id)
     return [AppealOut(**dict(row)) for row in rows]
 
 
-async def create_appeal(payload: AppealCreate) -> AppealOut:
+async def create_appeal(payload: AppealCreate, user_id: str) -> AppealOut:
     pool = get_pool()
-    # TODO: replace with the authenticated employee's user id once real login is wired up.
-    user_id = await get_or_create_demo_employee(pool)
 
     belongs_to_user = await appeal_repository.source_belongs_to_user(
         pool, source_type=payload.sourceType, source_id=payload.sourceId, user_id=user_id

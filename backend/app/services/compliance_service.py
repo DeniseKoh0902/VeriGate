@@ -7,7 +7,6 @@ from app.repositories import (
     prompt_repository,
     risk_alert_repository,
 )
-from app.repositories.user_repository import get_or_create_demo_employee
 from app.schemas.compliance import ComplianceOverviewOut, ComplianceRecordOut, FlagStatus
 from app.schemas.prompt import RiskFindingOut
 from app.services import incident_service
@@ -25,10 +24,8 @@ def _flag_status_for_appeal(appeal: asyncpg.Record | None) -> FlagStatus:
     return "OVERTURNED" if appeal["resolution"] == "OVERTURNED" else "UPHELD"
 
 
-async def get_overview() -> ComplianceOverviewOut:
+async def get_overview(user_id: str) -> ComplianceOverviewOut:
     pool = get_pool()
-    # TODO: replace with the authenticated employee's user id once real login is wired up.
-    user_id = await get_or_create_demo_employee(pool)
 
     prompts = await prompt_repository.list_prompts_for_user(pool, user_id)
     tool_requests = await ai_tool_request_repository.list_requests_by_user(pool, user_id)

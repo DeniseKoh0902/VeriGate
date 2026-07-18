@@ -2,7 +2,6 @@ from fastapi import HTTPException, status
 
 from app.db.pool import get_pool
 from app.repositories import policy_repository, sensitive_data_rule_repository
-from app.repositories.user_repository import get_or_create_system_user
 from app.schemas.policy import (
     PolicyCreate,
     PolicyOut,
@@ -19,10 +18,8 @@ async def list_policies() -> list[PolicyOut]:
     return [PolicyOut(**dict(row)) for row in rows]
 
 
-async def create_policy(payload: PolicyCreate) -> PolicyOut:
+async def create_policy(payload: PolicyCreate, created_by_id: str) -> PolicyOut:
     pool = get_pool()
-    # TODO: replace with the authenticated admin's user id once real login is wired up.
-    created_by_id = await get_or_create_system_user(pool)
     row = await policy_repository.create_policy(
         pool,
         name=payload.name,
@@ -63,9 +60,10 @@ async def list_sensitive_data_rules() -> list[SensitiveDataRuleOut]:
     return [SensitiveDataRuleOut(**dict(row)) for row in rows]
 
 
-async def create_sensitive_data_rule(payload: SensitiveDataRuleCreate) -> SensitiveDataRuleOut:
+async def create_sensitive_data_rule(
+    payload: SensitiveDataRuleCreate, created_by_id: str
+) -> SensitiveDataRuleOut:
     pool = get_pool()
-    created_by_id = await get_or_create_system_user(pool)
     row = await sensitive_data_rule_repository.create_sensitive_data_rule(
         pool,
         category=payload.category,

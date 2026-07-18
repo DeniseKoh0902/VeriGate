@@ -46,22 +46,28 @@ export function AiWorkspacePage() {
 
   useEffect(() => {
     promptService.getPromptHistory().then((history) => {
-      setTurns(
-        history.map((item) => ({
-          id: item.promptId,
-          userPrompt: item.promptText,
-          result: {
-            promptId: item.promptId,
-            status: item.status,
-            sanitizedText: item.sanitizedText,
-            riskFindings: item.riskFindings,
-            sanitizationChanges: [],
-            responseText: item.responseText,
-          },
-          isRevealed: true,
-          createdAt: new Date(item.createdAt),
-        })),
-      );
+      const historyTurns: Turn[] = history.map((item) => ({
+        id: item.promptId,
+        userPrompt: item.promptText,
+        result: {
+          promptId: item.promptId,
+          status: item.status,
+          sanitizedText: item.sanitizedText,
+          riskFindings: item.riskFindings,
+          sanitizationChanges: [],
+          responseText: item.responseText,
+        },
+        isRevealed: true,
+        createdAt: new Date(item.createdAt),
+      }));
+      // Merge rather than replace: a turn submitted before this fetch resolves
+      // (fast typing, slow network) must not be wiped out by stale history.
+      setTurns((prev) => {
+        const notYetInHistory = prev.filter(
+          (turn) => !historyTurns.some((h) => h.id === turn.id),
+        );
+        return [...historyTurns, ...notYetInHistory];
+      });
     });
   }, []);
 

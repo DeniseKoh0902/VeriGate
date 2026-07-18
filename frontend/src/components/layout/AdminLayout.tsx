@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/cn';
 import { Footer } from '@/components/common/Footer';
 import { TopHeader } from '@/components/layout/TopHeader';
+import { useAuth } from '@/context/AuthContext';
 
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -29,10 +30,16 @@ const navItems = [
 
 export function AdminLayout() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleSignOut = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
-      <TopHeader userName="Admin User" />
+      <TopHeader userName={user?.name} />
 
       <div className="flex flex-1">
         <aside className="flex w-64 shrink-0 flex-col bg-slate-900">
@@ -59,7 +66,7 @@ export function AdminLayout() {
           <div className="space-y-1 border-t border-slate-800 px-3 py-4">
             <button
               type="button"
-              onClick={() => navigate('/login')}
+              onClick={handleSignOut}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
             >
               <LogOut size={18} />

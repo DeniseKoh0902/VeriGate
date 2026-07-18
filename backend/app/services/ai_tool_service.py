@@ -8,7 +8,6 @@ from google.genai import errors, types
 from app.core.gemini_client import get_gemini_client
 from app.db.pool import get_pool
 from app.repositories import ai_tool_repository, ai_trust_evaluation_repository
-from app.repositories.user_repository import get_or_create_system_user
 from app.schemas.ai_tool import (
     AiToolCreate,
     AiToolOut,
@@ -184,7 +183,7 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
 
 
 async def approve_trust_evaluation(
-    tool_id: str, payload: AiTrustEvaluationCreate
+    tool_id: str, payload: AiTrustEvaluationCreate, reviewer_id: str
 ) -> AiTrustEvaluationOut:
     pool = get_pool()
     tool = await ai_tool_repository.get_ai_tool(pool, tool_id)
@@ -200,9 +199,6 @@ async def approve_trust_evaluation(
         payload.orgPolicyScore,
     ]
     overall_score = _overall_score(scores)
-
-    # TODO: replace with the authenticated admin's user id once real login is wired up.
-    reviewer_id = await get_or_create_system_user(pool)
 
     eval_row = await ai_trust_evaluation_repository.create_trust_evaluation(
         pool,
