@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/context/ToastContext';
 import { DEPARTMENTS } from '@/lib/departments';
+import { PASSWORD_HINT, validatePassword } from '@/lib/password';
 import * as userService from '@/services/user.service';
 import type { Employee, EmployeeCreateInput, Role } from '@/types/user.types';
 
@@ -111,6 +112,13 @@ export function EmployeeManagementPage() {
 
   const save = async () => {
     if (!form) return;
+    if (!editingId) {
+      const passwordError = validatePassword(form.password);
+      if (passwordError) {
+        toast.error(passwordError);
+        return;
+      }
+    }
     try {
       if (editingId) {
         const updated = await userService.updateEmployee(editingId, {
@@ -247,6 +255,7 @@ export function EmployeeManagementPage() {
                 <Input
                   placeholder="Temporary password"
                   type="password"
+                  title={PASSWORD_HINT}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                 />

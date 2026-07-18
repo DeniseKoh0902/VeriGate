@@ -16,8 +16,15 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
 
     cors_origins: list[str] = ["http://localhost:5173"]
+    frontend_url: str = "http://localhost:5173"
 
     gemini_api_key: str
+
+    email_host: str
+    email_port: int = 587
+    sender_email: str
+    sender_email_pw: str
+    password_reset_token_expire_minutes: int = 30
 
 
 @lru_cache

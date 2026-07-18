@@ -7,11 +7,23 @@ async def get_user_by_email(pool: asyncpg.Pool, email: str) -> asyncpg.Record | 
     async with pool.acquire() as conn:
         return await conn.fetchrow(
             """
-            SELECT "id", "email", "passwordHash", "name", "department", "role"
+            SELECT "id", "email", "passwordHash", "name", "department", "role", "isActive", "createdAt"
             FROM "users"
             WHERE "email" = $1
             """,
             email,
+        )
+
+
+async def get_user_by_id(pool: asyncpg.Pool, user_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT "id", "email", "passwordHash", "name", "department", "role", "isActive", "createdAt"
+            FROM "users"
+            WHERE "id" = $1
+            """,
+            user_id,
         )
 
 
@@ -94,54 +106,16 @@ async def email_exists(pool: asyncpg.Pool, email: str) -> bool:
         return row is not None
 
 
-async def get_or_create_system_user(pool: asyncpg.Pool) -> str:
-    """Returns the id of a placeholder admin user to attribute writes to,
-    until real authentication issues a session for the logged-in admin."""
+async def update_password(pool: asyncpg.Pool, user_id: str, password_hash: str) -> bool:
     async with pool.acquire() as conn:
-        existing = await conn.fetchrow(
-            'SELECT "id" FROM "users" WHERE "email" = $1',
-            "system@verigate.local",
-        )
-        if existing:
-            return existing["id"]
-
-        new_id = str(uuid.uuid4())
-        await conn.execute(
+        result = await conn.execute(
             """
-            INSERT INTO "users" ("id", "email", "passwordHash", "name", "department", "role", "updatedAt")
-            VALUES ($1, $2, $3, $4, $5, 'ADMIN', CURRENT_TIMESTAMP)
+            UPDATE "users" SET "passwordHash" = $2, "updatedAt" = CURRENT_TIMESTAMP
+            WHERE "id" = $1
             """,
-            new_id,
-            "system@verigate.local",
-            "unusable",
-            "System",
-            "IT Infrastructure",
+            user_id,
+            password_hash,
         )
-        return new_id
+        return result != "UPDATE 0"
 
 
-async def get_or_create_demo_employee(pool: asyncpg.Pool) -> str:
-    """Returns the id of a placeholder employee to attribute AI Workspace
-    activity to, until real authentication issues a session for the
-    logged-in employee."""
-    async with pool.acquire() as conn:
-        existing = await conn.fetchrow(
-            'SELECT "id" FROM "users" WHERE "email" = $1',
-            "demo.employee@verigate.local",
-        )
-        if existing:
-            return existing["id"]
-
-        new_id = str(uuid.uuid4())
-        await conn.execute(
-            """
-            INSERT INTO "users" ("id", "email", "passwordHash", "name", "department", "role", "updatedAt")
-            VALUES ($1, $2, $3, $4, $5, 'EMPLOYEE', CURRENT_TIMESTAMP)
-            """,
-            new_id,
-            "demo.employee@verigate.local",
-            "unusable",
-            "Demo Employee",
-            "Finance",
-        )
-        return new_id

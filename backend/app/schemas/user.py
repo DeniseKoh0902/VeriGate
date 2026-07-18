@@ -3,12 +3,14 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr
 
+from app.schemas.password import PasswordStr
+
 Role = Literal["ADMIN", "COMPLIANCE", "EMPLOYEE"]
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: PasswordStr
     name: str
     department: str
     role: Role = "EMPLOYEE"

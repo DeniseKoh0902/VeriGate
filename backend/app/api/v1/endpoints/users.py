@@ -1,9 +1,14 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
+from app.core.dependencies import require_roles
 from app.schemas.user import UserCreate, UserOut, UserUpdate
 from app.services import user_service
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["users"],
+    dependencies=[Depends(require_roles("ADMIN"))],
+)
 
 
 @router.get("", response_model=list[UserOut])

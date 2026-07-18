@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class PromptSubmitRequest(BaseModel):
     aiToolName: str
     promptText: str
+    sessionId: str | None = None
 
 
 class RiskFindingOut(BaseModel):
@@ -21,6 +22,7 @@ class SanitizationChangeOut(BaseModel):
 
 class PromptSubmitResponse(BaseModel):
     promptId: str
+    sessionId: str
     status: str
     sanitizedText: str | None
     riskFindings: list[RiskFindingOut]
@@ -35,4 +37,12 @@ class PromptHistoryItem(BaseModel):
     sanitizedText: str | None
     riskFindings: list[RiskFindingOut]
     responseText: str | None
+    createdAt: datetime
+
+
+class ChatSessionOut(BaseModel):
+    id: str
+    aiToolName: str
+    preview: str
+    lastMessageAt: datetime
     createdAt: datetime

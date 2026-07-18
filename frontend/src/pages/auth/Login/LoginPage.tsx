@@ -1,31 +1,53 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, LogIn, ShieldCheck, User } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
 import { AuthLayout } from '@/components/layout/AuthLayout';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { cn } from '@/lib/cn';
+import { useAuth } from '@/context/AuthContext';
 import type { LoginFormValues } from '@/types/auth.types';
+import type { Role } from '@/types/user.types';
 
 const initialValues: LoginFormValues = { email: '', password: '' };
 
-type LoginRole = 'admin' | 'employee';
+const roleHomePath: Record<Role, string> = {
+  ADMIN: '/dashboard',
+  COMPLIANCE: '/dashboard',
+  EMPLOYEE: '/workspace',
+};
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [role, setRole] = useState<LoginRole>('admin');
+  const { user, login } = useAuth();
   const [values, setValues] = useState<LoginFormValues>(initialValues);
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      navigate(roleHomePath[user.role], { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleChange =
     (field: keyof LoginFormValues) => (event: React.ChangeEvent<HTMLInputElement>) => {
       setValues((prev) => ({ ...prev, [field]: event.target.value }));
     };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    navigate(role === 'admin' ? '/dashboard' : '/workspace');
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const loggedInUser = await login(values.email, values.password);
+      navigate(roleHomePath[loggedInUser.role], { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -36,32 +58,11 @@ export function LoginPage() {
           Please enter your credentials to access the governance dashboard.
         </p>
 
-        <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => setRole('admin')}
-            className={cn(
-              'flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors',
-              role === 'admin' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
-            )}
-          >
-            <ShieldCheck size={15} />
-            IT Infrastructure
-          </button>
-          <button
-            type="button"
-            onClick={() => setRole('employee')}
-            className={cn(
-              'flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors',
-              role === 'employee' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
-            )}
-          >
-            <User size={15} />
-            Employee
-          </button>
-        </div>
-
         <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
+          {error && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          )}
+
           <Input
             id="email"
             name="email"
@@ -106,7 +107,7 @@ export function LoginPage() {
             required
           />
 
-          <Button type="submit">
+          <Button type="submit" isLoading={isSubmitting}>
             Sign In
             <LogIn size={16} />
           </Button>

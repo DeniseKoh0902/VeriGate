@@ -1,3 +1,5 @@
+import type { Role } from '@/types/user.types';
+
 export interface LoginFormValues {
   email: string;
   password: string;
@@ -5,8 +7,20 @@ export interface LoginFormValues {
 
 export interface AuthUser {
   id: string;
-  name: string;
   email: string;
-  role: 'admin' | 'compliance' | 'employee';
+  name: string;
   department: string;
+  role: Role;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface TokenResponse {
+  accessToken: string;
+  tokenType: string;
+  user: AuthUser;
+}
+
+export interface MessageResponse {
+  message: string;
 }
