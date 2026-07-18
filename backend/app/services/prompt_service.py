@@ -1,6 +1,8 @@
 import logging
 import time
 
+from fastapi import HTTPException
+from fastapi import status as http_status
 from google.genai import errors, types
 
 from app.core.gemini_client import get_gemini_client
@@ -13,6 +15,7 @@ from app.repositories import (
     sensitive_data_rule_repository,
 )
 from app.schemas.prompt import (
+    ChatSessionOut,
     PromptHistoryItem,
     PromptSubmitRequest,
     PromptSubmitResponse,
@@ -51,7 +54,18 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     pool = get_pool()
 
     ai_tool = await ai_tool_repository.get_or_create_ai_tool_by_name(pool, payload.aiToolName)
-    session_id = await prompt_repository.get_or_create_active_session(pool, user_id, ai_tool["id"])
+
+    if payload.sessionId:
+        session = await prompt_repository.get_session(pool, payload.sessionId, user_id)
+        if session is None:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Chat session not found."
+            )
+        session_id = session["id"]
+    else:
+        session_id = await prompt_repository.create_session(
+            pool, user_id=user_id, ai_tool_id=ai_tool["id"]
+        )
 
     active_rules = await sensitive_data_rule_repository.list_active_rules(pool)
     matches = detection_service.detect(payload.promptText, active_rules)
@@ -127,6 +141,7 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
 
     return PromptSubmitResponse(
         promptId=prompt["id"],
+        sessionId=session_id,
         status=status,
         sanitizedText=sanitized_text,
         riskFindings=[
@@ -141,25 +156,32 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     )
 
 
-async def get_prompt_history(user_id: str) -> list[PromptHistoryItem]:
+def _to_history_item(row: dict) -> PromptHistoryItem:
+    return PromptHistoryItem(
+        promptId=row["id"],
+        promptText=row["promptText"],
+        status=row["status"],
+        sanitizedText=row["sanitizedText"],
+        riskFindings=[
+            RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
+            for f in row["riskFindings"]
+        ],
+        responseText=row["responseText"],
+        createdAt=row["createdAt"],
+    )
+
+
+async def list_chat_sessions(user_id: str) -> list[ChatSessionOut]:
     pool = get_pool()
+    rows = await prompt_repository.list_sessions_for_user(pool, user_id)
+    return [ChatSessionOut(**dict(row)) for row in rows]
 
-    rows = await prompt_repository.list_prompts_for_user(pool, user_id)
 
-    return [
-        PromptHistoryItem(
-            promptId=row["id"],
-            promptText=row["promptText"],
-            status=row["status"],
-            sanitizedText=row["sanitizedText"],
-            riskFindings=[
-                RiskFindingOut(
-                    category=f["category"], riskLevel=f["riskLevel"], note=f["note"]
-                )
-                for f in row["riskFindings"]
-            ],
-            responseText=row["responseText"],
-            createdAt=row["createdAt"],
-        )
-        for row in rows
-    ]
+async def get_session_messages(session_id: str, user_id: str) -> list[PromptHistoryItem]:
+    pool = get_pool()
+    session = await prompt_repository.get_session(pool, session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Chat session not found.")
+
+    rows = await prompt_repository.list_prompts_for_session(pool, session_id)
+    return [_to_history_item(row) for row in rows]

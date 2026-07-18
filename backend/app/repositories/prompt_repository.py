@@ -3,22 +3,9 @@ import uuid
 import asyncpg
 
 
-async def get_or_create_active_session(pool: asyncpg.Pool, user_id: str, ai_tool_id: str) -> str:
+async def create_session(pool: asyncpg.Pool, *, user_id: str, ai_tool_id: str) -> str:
+    session_id = str(uuid.uuid4())
     async with pool.acquire() as conn:
-        existing = await conn.fetchrow(
-            """
-            SELECT "id" FROM "ai_sessions"
-            WHERE "userId" = $1 AND "aiToolId" = $2 AND "status" = 'ACTIVE'
-            ORDER BY "startedAt" DESC
-            LIMIT 1
-            """,
-            user_id,
-            ai_tool_id,
-        )
-        if existing:
-            return existing["id"]
-
-        session_id = str(uuid.uuid4())
         await conn.execute(
             """
             INSERT INTO "ai_sessions" ("id", "userId", "aiToolId")
@@ -28,7 +15,39 @@ async def get_or_create_active_session(pool: asyncpg.Pool, user_id: str, ai_tool
             user_id,
             ai_tool_id,
         )
-        return session_id
+    return session_id
+
+
+async def get_session(pool: asyncpg.Pool, session_id: str, user_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            'SELECT "id" FROM "ai_sessions" WHERE "id" = $1 AND "userId" = $2',
+            session_id,
+            user_id,
+        )
+
+
+async def list_sessions_for_user(pool: asyncpg.Pool, user_id: str) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT s."id", t."name" AS "aiToolName", s."startedAt" AS "createdAt",
+                   first_p."promptText" AS "preview", last_p."createdAt" AS "lastMessageAt"
+            FROM "ai_sessions" s
+            JOIN "ai_tools" t ON t."id" = s."aiToolId"
+            JOIN LATERAL (
+                SELECT "promptText" FROM "prompts"
+                WHERE "sessionId" = s."id" ORDER BY "createdAt" ASC LIMIT 1
+            ) first_p ON true
+            JOIN LATERAL (
+                SELECT "createdAt" FROM "prompts"
+                WHERE "sessionId" = s."id" ORDER BY "createdAt" DESC LIMIT 1
+            ) last_p ON true
+            WHERE s."userId" = $1
+            ORDER BY last_p."createdAt" DESC
+            """,
+            user_id,
+        )
 
 
 async def create_prompt(
@@ -85,7 +104,29 @@ async def create_prompt_risk_finding(
         )
 
 
-async def list_prompts_for_user(pool: asyncpg.Pool, user_id: str) -> list[asyncpg.Record]:
+async def _attach_risk_findings(
+    conn: asyncpg.Connection, prompts: list[asyncpg.Record]
+) -> list[dict]:
+    if not prompts:
+        return []
+
+    findings = await conn.fetch(
+        """
+        SELECT "promptId", "category", "riskLevel", "note"
+        FROM "prompt_risk_findings"
+        WHERE "promptId" = ANY($1::text[])
+        """,
+        [p["id"] for p in prompts],
+    )
+
+    findings_by_prompt: dict[str, list[asyncpg.Record]] = {}
+    for finding in findings:
+        findings_by_prompt.setdefault(finding["promptId"], []).append(finding)
+
+    return [{**dict(p), "riskFindings": findings_by_prompt.get(p["id"], [])} for p in prompts]
+
+
+async def list_prompts_for_user(pool: asyncpg.Pool, user_id: str) -> list[dict]:
     async with pool.acquire() as conn:
         prompts = await conn.fetch(
             """
@@ -99,25 +140,23 @@ async def list_prompts_for_user(pool: asyncpg.Pool, user_id: str) -> list[asyncp
             """,
             user_id,
         )
-        if not prompts:
-            return []
+        return await _attach_risk_findings(conn, prompts)
 
-        findings = await conn.fetch(
+
+async def list_prompts_for_session(pool: asyncpg.Pool, session_id: str) -> list[dict]:
+    async with pool.acquire() as conn:
+        prompts = await conn.fetch(
             """
-            SELECT "promptId", "category", "riskLevel", "note"
-            FROM "prompt_risk_findings"
-            WHERE "promptId" = ANY($1::text[])
+            SELECT p."id", p."promptText", p."sanitizedText", p."status", p."createdAt",
+                   r."responseText"
+            FROM "prompts" p
+            LEFT JOIN "ai_responses" r ON r."promptId" = p."id"
+            WHERE p."sessionId" = $1
+            ORDER BY p."createdAt" ASC
             """,
-            [p["id"] for p in prompts],
+            session_id,
         )
-
-    findings_by_prompt: dict[str, list[asyncpg.Record]] = {}
-    for finding in findings:
-        findings_by_prompt.setdefault(finding["promptId"], []).append(finding)
-
-    return [
-        {**dict(p), "riskFindings": findings_by_prompt.get(p["id"], [])} for p in prompts
-    ]
+        return await _attach_risk_findings(conn, prompts)
 
 
 async def get_prompt_by_id(pool: asyncpg.Pool, prompt_id: str) -> dict | None:

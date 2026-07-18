@@ -1,5 +1,10 @@
 import { apiFetch } from '@/lib/apiClient';
-import type { PromptHistoryItem, PromptSubmitInput, PromptSubmitResult } from '@/types/prompt.types';
+import type {
+  ChatSession,
+  PromptHistoryItem,
+  PromptSubmitInput,
+  PromptSubmitResult,
+} from '@/types/prompt.types';
 
 export function submitPrompt(input: PromptSubmitInput) {
   return apiFetch<PromptSubmitResult>('/prompts', {
@@ -8,6 +13,10 @@ export function submitPrompt(input: PromptSubmitInput) {
   });
 }
 
-export function getPromptHistory() {
-  return apiFetch<PromptHistoryItem[]>('/prompts');
+export function listChatSessions() {
+  return apiFetch<ChatSession[]>('/prompts/sessions');
+}
+
+export function getSessionMessages(sessionId: string) {
+  return apiFetch<PromptHistoryItem[]>(`/prompts/sessions/${sessionId}`);
 }
