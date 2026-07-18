@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
+
+from app.schemas.common import UtcDatetime
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 RuleAction = Literal["ALLOW", "WARN", "BLOCK", "SANITIZE"]
@@ -30,7 +31,7 @@ class PolicyOut(BaseModel):
     appliesToDepartment: str | None
     isActive: bool
     createdById: str
-    createdAt: datetime
+    createdAt: UtcDatetime
 
 
 class SensitiveDataRuleCreate(BaseModel):
@@ -53,4 +54,4 @@ class SensitiveDataRuleOut(BaseModel):
     action: RuleAction
     isActive: bool
     createdById: str
-    createdAt: datetime
+    createdAt: UtcDatetime

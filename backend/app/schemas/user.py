@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr
 
+from app.schemas.common import UtcDatetime
 from app.schemas.password import PasswordStr
 
 Role = Literal["ADMIN", "COMPLIANCE", "EMPLOYEE"]
@@ -30,4 +30,4 @@ class UserOut(BaseModel):
     department: str
     role: Role
     isActive: bool
-    createdAt: datetime
+    createdAt: UtcDatetime

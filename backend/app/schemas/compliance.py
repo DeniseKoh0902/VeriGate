@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
 
 from app.schemas.appeal import AppealResolution, AppealSourceType, AppealStatus
+from app.schemas.common import UtcDatetime
 from app.schemas.prompt import RiskFindingOut
 
 FlagStatus = Literal[
@@ -17,7 +17,7 @@ class ComplianceRecordOut(BaseModel):
     sourceType: AppealSourceType
     title: str
     policy: str | None
-    date: datetime
+    date: UtcDatetime
     flagStatus: FlagStatus
     appealable: bool
     appealId: str | None

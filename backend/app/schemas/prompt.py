@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel
+
+from app.schemas.common import UtcDatetime
 
 
 class PromptSubmitRequest(BaseModel):
@@ -37,12 +37,12 @@ class PromptHistoryItem(BaseModel):
     sanitizedText: str | None
     riskFindings: list[RiskFindingOut]
     responseText: str | None
-    createdAt: datetime
+    createdAt: UtcDatetime
 
 
 class ChatSessionOut(BaseModel):
     id: str
     aiToolName: str
     preview: str
-    lastMessageAt: datetime
-    createdAt: datetime
+    lastMessageAt: UtcDatetime
+    createdAt: UtcDatetime

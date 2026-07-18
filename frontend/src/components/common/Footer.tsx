@@ -1,7 +1,9 @@
+import { Link } from 'react-router-dom';
+
 const footerLinks = [
-  { label: 'Privacy Policy', href: '#privacy' },
-  { label: 'Terms of Service', href: '#terms' },
-  { label: 'Support', href: '#support' },
+  { label: 'Privacy Policy', to: '/privacy-policy' },
+  { label: 'Terms of Service', to: '/terms-of-service' },
+  { label: 'Support', to: '/support' },
 ];
 
 export function Footer() {
@@ -11,9 +13,9 @@ export function Footer() {
         <p>© 2026 VeriGate. All rights reserved.</p>
         <nav className="flex items-center gap-5">
           {footerLinks.map((link) => (
-            <a key={link.label} href={link.href} className="hover:text-slate-900">
+            <Link key={link.label} to={link.to} className="hover:text-slate-900">
               {link.label}
-            </a>
+            </Link>
           ))}
         </nav>
       </div>

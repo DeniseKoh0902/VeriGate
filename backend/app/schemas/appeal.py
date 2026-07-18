@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.common import UtcDatetime
 from app.schemas.prompt import RiskFindingOut
 
 AppealSourceType = Literal["PROMPT_BLOCK", "TOOL_REJECTION", "RISK_ALERT"]
@@ -30,9 +30,9 @@ class AppealOut(BaseModel):
     additionalInfoRequest: str | None
     employeeResponse: str | None
     reviewedById: str | None
-    slaDeadline: datetime | None
-    createdAt: datetime
-    resolvedAt: datetime | None
+    slaDeadline: UtcDatetime | None
+    createdAt: UtcDatetime
+    resolvedAt: UtcDatetime | None
 
 
 class AppealResolveRequest(BaseModel):
@@ -63,9 +63,9 @@ class AppealAdminOut(BaseModel):
     resolutionNotes: str | None
     additionalInfoRequest: str | None
     employeeResponse: str | None
-    slaDeadline: datetime | None
-    createdAt: datetime
-    resolvedAt: datetime | None
+    slaDeadline: UtcDatetime | None
+    createdAt: UtcDatetime
+    resolvedAt: UtcDatetime | None
 
     # Populated for RISK_ALERT (and legacy PROMPT_BLOCK) appeals so the
     # reviewer can see exactly what was sent, not just the rule it tripped.

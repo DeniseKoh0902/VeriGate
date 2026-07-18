@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
+
+from app.schemas.common import UtcDatetime
 
 RequestStatus = Literal["PENDING", "APPROVED", "REJECTED"]
 
@@ -22,5 +23,5 @@ class AiToolRequestOut(BaseModel):
     rejectionReason: str | None
     approvedToolId: str | None
     reviewedById: str | None
-    submittedAt: datetime
-    reviewedAt: datetime | None
+    submittedAt: UtcDatetime
+    reviewedAt: UtcDatetime | None
