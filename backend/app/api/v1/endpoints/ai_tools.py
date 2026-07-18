@@ -27,18 +27,24 @@ async def get_ai_tools() -> list[AiToolOut]:
 
 
 @router.post("", response_model=AiToolOut, status_code=status.HTTP_201_CREATED)
-async def create_ai_tool(payload: AiToolCreate) -> AiToolOut:
-    return await ai_tool_service.create_ai_tool(payload)
+async def create_ai_tool(
+    payload: AiToolCreate, current_user: UserOut = Depends(_require_governance)
+) -> AiToolOut:
+    return await ai_tool_service.create_ai_tool(payload, current_user.id)
 
 
 @router.patch("/{tool_id}", response_model=AiToolOut)
-async def update_ai_tool(tool_id: str, payload: AiToolUpdate) -> AiToolOut:
-    return await ai_tool_service.update_ai_tool(tool_id, payload)
+async def update_ai_tool(
+    tool_id: str, payload: AiToolUpdate, current_user: UserOut = Depends(_require_governance)
+) -> AiToolOut:
+    return await ai_tool_service.update_ai_tool(tool_id, payload, current_user.id)
 
 
 @router.delete("/{tool_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_ai_tool(tool_id: str) -> None:
-    await ai_tool_service.delete_ai_tool(tool_id)
+async def delete_ai_tool(
+    tool_id: str, current_user: UserOut = Depends(_require_governance)
+) -> None:
+    await ai_tool_service.delete_ai_tool(tool_id, current_user.id)
 
 
 @router.post("/{tool_id}/trust-evaluations/propose", response_model=AiTrustEvaluationProposal)

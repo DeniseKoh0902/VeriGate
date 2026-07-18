@@ -7,6 +7,7 @@ from app.db.pool import get_pool
 from app.repositories import (
     ai_tool_request_repository,
     appeal_repository,
+    audit_log_repository,
     notification_repository,
     prompt_repository,
     risk_alert_repository,
@@ -142,6 +143,14 @@ async def resolve_appeal(
     if row["resolution"] == "OVERTURNED":
         await _unblock_prompt_if_overturned(pool, row)
 
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=reviewer_id,
+        action=f"Appeal {row['resolution'].title()}",
+        entity_type="Appeal",
+        entity_id=appeal_id,
+    )
+
     return await _to_admin_out(pool, row)
 
 
@@ -171,6 +180,14 @@ async def request_more_info(
         related_entity_id=appeal_id,
     )
 
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=reviewer_id,
+        action="Appeal Info Requested",
+        entity_type="Appeal",
+        entity_id=appeal_id,
+    )
+
     return await _to_admin_out(pool, row)
 
 
@@ -189,6 +206,15 @@ async def respond_to_info_request(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="This appeal isn't awaiting additional information from you.",
         )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=user_id,
+        action="Appeal Response Submitted",
+        entity_type="Appeal",
+        entity_id=appeal_id,
+    )
+
     return AppealOut(**dict(row))
 
 
@@ -227,4 +253,13 @@ async def create_appeal(payload: AppealCreate, user_id: str) -> AppealOut:
         justification=payload.justification,
         evidence_url=payload.evidenceUrl,
     )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=user_id,
+        action="Appeal Submitted",
+        entity_type="Appeal",
+        entity_id=row["id"],
+    )
+
     return AppealOut(**dict(row))

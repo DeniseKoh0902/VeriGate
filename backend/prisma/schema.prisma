@@ -275,11 +275,19 @@ model RiskAlert {
 
 model AuditLog {
   id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
+  // Nullable so a failed login against an email with no matching account can
+  // still be logged (there's no user row to attach it to) — entityId carries
+  // the attempted email in that case instead of a real entity's id.
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
   action     String
   entityType String
   entityId   String
+  // JSON snapshot of the entity's detail fields, captured at deletion time
+  // only — once a row is deleted there's nothing left to look up live for
+  // the "View Details" panel, so a Removed action carries its own copy
+  // instead. Null for every other action, which still resolve details live.
+  snapshot   String?
   ipAddress  String?
   createdAt  DateTime @default(now())
 

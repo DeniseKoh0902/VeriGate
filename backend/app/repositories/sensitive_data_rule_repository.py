@@ -15,6 +15,11 @@ async def list_active_rules(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return await conn.fetch('SELECT * FROM "sensitive_data_rules" WHERE "isActive" = true')
 
 
+async def get_rule_by_id(pool: asyncpg.Pool, rule_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM "sensitive_data_rules" WHERE "id" = $1', rule_id)
+
+
 async def create_sensitive_data_rule(
     pool: asyncpg.Pool,
     *,
