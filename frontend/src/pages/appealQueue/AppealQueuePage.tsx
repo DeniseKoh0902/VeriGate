@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, X, MessageCircleQuestion, Paperclip } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  MessageCircleQuestion,
+  Paperclip,
+  Search,
+} from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/context/ToastContext';
 import * as appealService from '@/services/appeal.service';
@@ -40,6 +49,15 @@ function getDisplayStatus(appeal: AppealAdmin): DisplayStatus {
   return appeal.status;
 }
 
+const statusFilters: (DisplayStatus | 'All')[] = [
+  'All',
+  'PENDING',
+  'UNDER_REVIEW',
+  'AWAITING_INFO',
+  'OVERDUE',
+  'RESOLVED',
+];
+
 function shortId(id: string) {
   return `APL-${id.slice(0, 8).toUpperCase()}`;
 }
@@ -63,6 +81,8 @@ export function AppealQueuePage() {
   const [infoMessage, setInfoMessage] = useState('');
   const [isSubmittingInfo, setIsSubmittingInfo] = useState(false);
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<DisplayStatus | 'All'>('All');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadAppeals = async () => {
     setIsLoading(true);
@@ -89,9 +109,46 @@ export function AppealQueuePage() {
 
   const selected = appeals.find((appeal) => appeal.id === selectedId) ?? null;
 
-  const totalPages = Math.max(1, Math.ceil(appeals.length / APPEALS_PER_PAGE));
+  const searchMatched = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+    if (!term) return appeals;
+
+    return appeals.filter((appeal) => {
+      const haystack = [appeal.title, appeal.employeeName, appeal.policy ?? '', shortId(appeal.id)]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [appeals, searchQuery]);
+
+  const sectionCounts = useMemo(() => {
+    const counts: Record<DisplayStatus | 'All', number> = {
+      All: searchMatched.length,
+      PENDING: 0,
+      UNDER_REVIEW: 0,
+      AWAITING_INFO: 0,
+      OVERDUE: 0,
+      RESOLVED: 0,
+    };
+    for (const appeal of searchMatched) {
+      counts[getDisplayStatus(appeal)] += 1;
+    }
+    return counts;
+  }, [searchMatched]);
+
+  const filtered = useMemo(() => {
+    return filter === 'All'
+      ? searchMatched
+      : searchMatched.filter((appeal) => getDisplayStatus(appeal) === filter);
+  }, [searchMatched, filter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / APPEALS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
-  const pagedAppeals = appeals.slice(
+  const pagedAppeals = filtered.slice(
     (currentPage - 1) * APPEALS_PER_PAGE,
     currentPage * APPEALS_PER_PAGE,
   );
@@ -159,9 +216,36 @@ export function AppealQueuePage() {
 
       <div className="grid grid-cols-3 gap-6">
         <Card className="col-span-2 divide-y divide-slate-100">
-          {!isLoading && appeals.length === 0 && (
+          <div className="px-5 py-4">
+            <Input
+              placeholder="Search appeals by employee, title, or policy…"
+              leftIcon={<Search size={16} />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-1 px-5 py-3">
+            {statusFilters.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFilter(value)}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  filter === value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100',
+                )}
+              >
+                {value === 'All' ? 'All' : statusLabel[value]} ({sectionCounts[value]})
+              </button>
+            ))}
+          </div>
+
+          {!isLoading && filtered.length === 0 && (
             <div className="px-5 py-8 text-center text-sm text-slate-400">
-              No appeals to review.
+              {searchQuery.trim() || filter !== 'All'
+                ? 'No appeals match your search.'
+                : 'No appeals to review.'}
             </div>
           )}
           {pagedAppeals.map((appeal) => {
@@ -250,6 +334,17 @@ export function AppealQueuePage() {
                   <dd className="font-medium text-slate-700">{selected.policy ?? '—'}</dd>
                 </div>
               </dl>
+
+              {selected.promptText && (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Prompt Sent
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                    {selected.promptText}
+                  </p>
+                </div>
+              )}
 
               <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Employee justification

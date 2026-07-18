@@ -17,7 +17,6 @@ import type {
 
 const filters: { value: ComplianceSourceType | 'All'; label: string }[] = [
   { value: 'All', label: 'All' },
-  { value: 'PROMPT_BLOCK', label: 'Prompt Block' },
   { value: 'TOOL_REJECTION', label: 'Tool Rejection' },
   { value: 'RISK_ALERT', label: 'Risk Alert' },
 ];
@@ -326,32 +325,6 @@ export function MyComplianceOverviewPage() {
 
               {isExpanded && (
                 <div className="mt-3 ml-6 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                  {record.sourceType === 'PROMPT_BLOCK' && (
-                    <>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Prompt Sent
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap text-slate-700">{record.promptText}</p>
-                      {record.riskFindings.length > 0 && (
-                        <>
-                          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Detected
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {record.riskFindings.map((finding, index) => (
-                              <span
-                                key={index}
-                                className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700"
-                              >
-                                {finding.category} · {finding.riskLevel}
-                              </span>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-
                   {record.sourceType === 'TOOL_REJECTION' && (
                     <>
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -375,12 +348,35 @@ export function MyComplianceOverviewPage() {
 
                   {record.sourceType === 'RISK_ALERT' && (
                     <>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Alert Details
-                      </p>
-                      <p className="mt-1 text-slate-700">{record.description ?? record.alertType}</p>
+                      {record.promptText && (
+                        <>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Prompt Sent
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-slate-700">{record.promptText}</p>
+                        </>
+                      )}
+
+                      {record.riskFindings.length > 0 && (
+                        <>
+                          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Detected Rule
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {record.riskFindings.map((finding, index) => (
+                              <span
+                                key={index}
+                                className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700"
+                              >
+                                {finding.category} · {finding.riskLevel}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
                       {record.severity && (
-                        <p className="mt-2 text-xs text-slate-500">
+                        <p className="mt-3 text-xs text-slate-500">
                           Severity: <span className="font-medium text-slate-700">{record.severity}</span>
                         </p>
                       )}

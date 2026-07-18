@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.prompt import RiskFindingOut
+
 AppealSourceType = Literal["PROMPT_BLOCK", "TOOL_REJECTION", "RISK_ALERT"]
 AppealStatus = Literal["PENDING", "UNDER_REVIEW", "AWAITING_INFO", "RESOLVED"]
 AppealResolution = Literal["UPHELD", "OVERTURNED"]
@@ -64,3 +66,8 @@ class AppealAdminOut(BaseModel):
     slaDeadline: datetime | None
     createdAt: datetime
     resolvedAt: datetime | None
+
+    # Populated for RISK_ALERT (and legacy PROMPT_BLOCK) appeals so the
+    # reviewer can see exactly what was sent, not just the rule it tripped.
+    promptText: str | None = None
+    riskFindings: list[RiskFindingOut] = []

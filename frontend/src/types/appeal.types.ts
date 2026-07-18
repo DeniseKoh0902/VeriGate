@@ -1,4 +1,9 @@
-import type { AppealResolution, AppealStatus, ComplianceSourceType } from '@/types/compliance.types';
+import type {
+  AppealResolution,
+  AppealStatus,
+  ComplianceRiskFinding,
+  ComplianceSourceType,
+} from '@/types/compliance.types';
 
 export interface Appeal {
   id: string;
@@ -43,6 +48,8 @@ export interface AppealAdmin {
   slaDeadline: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  promptText: string | null;
+  riskFindings: ComplianceRiskFinding[];
 }
 
 export interface AppealResolveInput {
