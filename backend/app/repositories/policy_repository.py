@@ -8,6 +8,11 @@ async def list_policies(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return await conn.fetch('SELECT * FROM "policies" ORDER BY "createdAt" DESC')
 
 
+async def get_policy_by_id(pool: asyncpg.Pool, policy_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM "policies" WHERE "id" = $1', policy_id)
+
+
 async def create_policy(
     pool: asyncpg.Pool,
     *,

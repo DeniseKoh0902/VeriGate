@@ -43,14 +43,18 @@ async def create_sensitive_data_rule(
 
 @router.patch("/sensitive-data-rules/{rule_id}", response_model=SensitiveDataRuleOut)
 async def update_sensitive_data_rule(
-    rule_id: str, payload: SensitiveDataRuleUpdate
+    rule_id: str,
+    payload: SensitiveDataRuleUpdate,
+    current_user: UserOut = Depends(_require_governance),
 ) -> SensitiveDataRuleOut:
-    return await policy_service.update_sensitive_data_rule(rule_id, payload)
+    return await policy_service.update_sensitive_data_rule(rule_id, payload, current_user.id)
 
 
 @router.delete("/sensitive-data-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_sensitive_data_rule(rule_id: str) -> None:
-    await policy_service.delete_sensitive_data_rule(rule_id)
+async def delete_sensitive_data_rule(
+    rule_id: str, current_user: UserOut = Depends(_require_governance)
+) -> None:
+    await policy_service.delete_sensitive_data_rule(rule_id, current_user.id)
 
 
 @router.get("", response_model=list[PolicyOut])
@@ -66,10 +70,14 @@ async def create_policy(
 
 
 @router.patch("/{policy_id}", response_model=PolicyOut)
-async def update_policy(policy_id: str, payload: PolicyUpdate) -> PolicyOut:
-    return await policy_service.update_policy(policy_id, payload)
+async def update_policy(
+    policy_id: str, payload: PolicyUpdate, current_user: UserOut = Depends(_require_governance)
+) -> PolicyOut:
+    return await policy_service.update_policy(policy_id, payload, current_user.id)
 
 
 @router.delete("/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_policy(policy_id: str) -> None:
-    await policy_service.delete_policy(policy_id)
+async def delete_policy(
+    policy_id: str, current_user: UserOut = Depends(_require_governance)
+) -> None:
+    await policy_service.delete_policy(policy_id, current_user.id)

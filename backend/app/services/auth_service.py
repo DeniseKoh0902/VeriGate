@@ -13,6 +13,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.pool import get_pool
+from app.repositories import audit_log_repository
 from app.repositories.user_repository import get_user_by_email, get_user_by_id, update_password
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -35,16 +36,40 @@ async def authenticate_user(payload: LoginRequest) -> TokenResponse:
     user = await get_user_by_email(pool, payload.email)
 
     if user is None or not verify_password(payload.password, user["passwordHash"]):
+        # No user row to attach this to when the email itself is unknown —
+        # entityId carries the attempted email instead in that case.
+        await audit_log_repository.create_audit_log(
+            pool,
+            user_id=user["id"] if user else None,
+            action="Login Failed",
+            entity_type="Auth",
+            entity_id=user["id"] if user else payload.email,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
 
     if not user["isActive"]:
+        await audit_log_repository.create_audit_log(
+            pool,
+            user_id=user["id"],
+            action="Login Blocked — Account Deactivated",
+            entity_type="Auth",
+            entity_id=user["id"],
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="This account has been deactivated. Contact IT Infrastructure.",
         )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=user["id"],
+        action="Login Succeeded",
+        entity_type="Auth",
+        entity_id=user["id"],
+    )
 
     access_token = create_access_token(subject=user["id"], extra_claims={"role": user["role"]})
     return TokenResponse(accessToken=access_token, user=UserOut(**dict(user)))

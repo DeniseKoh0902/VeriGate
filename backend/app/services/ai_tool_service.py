@@ -7,7 +7,7 @@ from google.genai import errors, types
 
 from app.core.gemini_client import get_gemini_client
 from app.db.pool import get_pool
-from app.repositories import ai_tool_repository, ai_trust_evaluation_repository
+from app.repositories import ai_tool_repository, ai_trust_evaluation_repository, audit_log_repository
 from app.schemas.ai_tool import (
     AiToolCreate,
     AiToolOut,
@@ -57,13 +57,24 @@ def _overall_score(scores: list[int]) -> int:
     return round(sum(scores) / len(scores))
 
 
+def _tool_snapshot(row) -> str:
+    return json.dumps(
+        {
+            "vendor": row["vendor"],
+            "version": row["version"],
+            "riskTier": row["riskTier"],
+            "description": row["description"],
+        }
+    )
+
+
 async def list_ai_tools() -> list[AiToolOut]:
     pool = get_pool()
     rows = await ai_tool_repository.list_ai_tools(pool)
     return [AiToolOut(**dict(row)) for row in rows]
 
 
-async def create_ai_tool(payload: AiToolCreate) -> AiToolOut:
+async def create_ai_tool(payload: AiToolCreate, actor_id: str) -> AiToolOut:
     if payload.riskTier == "APPROVED":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -79,10 +90,20 @@ async def create_ai_tool(payload: AiToolCreate) -> AiToolOut:
         description=payload.description,
         risk_tier=payload.riskTier,
     )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action="AI Tool Added",
+        entity_type="AiTool",
+        entity_id=row["id"],
+        snapshot=_tool_snapshot(row),
+    )
+
     return AiToolOut(**dict(row))
 
 
-async def update_ai_tool(tool_id: str, payload: AiToolUpdate) -> AiToolOut:
+async def update_ai_tool(tool_id: str, payload: AiToolUpdate, actor_id: str) -> AiToolOut:
     if payload.riskTier == "APPROVED":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -102,11 +123,23 @@ async def update_ai_tool(tool_id: str, payload: AiToolUpdate) -> AiToolOut:
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI tool not found.")
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action="AI Tool Updated",
+        entity_type="AiTool",
+        entity_id=tool_id,
+        snapshot=_tool_snapshot(row),
+    )
+
     return AiToolOut(**dict(row))
 
 
-async def delete_ai_tool(tool_id: str) -> None:
+async def delete_ai_tool(tool_id: str, actor_id: str) -> None:
     pool = get_pool()
+    # Fetched before deletion — see policy_service.delete_policy for why.
+    tool = await ai_tool_repository.get_ai_tool(pool, tool_id)
     try:
         deleted = await ai_tool_repository.delete_ai_tool(pool, tool_id)
     except asyncpg.exceptions.ForeignKeyViolationError as error:
@@ -116,6 +149,17 @@ async def delete_ai_tool(tool_id: str) -> None:
         ) from error
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI tool not found.")
+
+    tool_name = tool["name"] if tool else tool_id
+    snapshot = _tool_snapshot(tool) if tool else None
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action=f'AI Tool Removed: "{tool_name}"',
+        entity_type="AiTool",
+        entity_id=tool_id,
+        snapshot=snapshot,
+    )
 
 
 async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
@@ -219,6 +263,14 @@ async def approve_trust_evaluation(
         risk_tier="APPROVED",
         is_approved=True,
         approved_by_id=reviewer_id,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=reviewer_id,
+        action="AI Trust Evaluation Recorded",
+        entity_type="AiTool",
+        entity_id=tool_id,
     )
 
     return AiTrustEvaluationOut(**dict(eval_row))

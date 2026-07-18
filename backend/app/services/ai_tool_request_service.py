@@ -1,5 +1,5 @@
 from app.db.pool import get_pool
-from app.repositories import ai_tool_request_repository
+from app.repositories import ai_tool_request_repository, audit_log_repository
 from app.schemas.ai_tool_request import AiToolRequestCreate, AiToolRequestOut
 
 
@@ -18,4 +18,13 @@ async def create_request(payload: AiToolRequestCreate, user_id: str) -> AiToolRe
         business_reason=payload.businessReason,
         department=payload.department,
     )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=user_id,
+        action="AI Tool Request Submitted",
+        entity_type="AiToolRequest",
+        entity_id=row["id"],
+    )
+
     return AiToolRequestOut(**dict(row))

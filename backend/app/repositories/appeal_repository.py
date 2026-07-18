@@ -35,6 +35,11 @@ async def list_appeals_by_user(pool: asyncpg.Pool, user_id: str) -> list[asyncpg
         )
 
 
+async def get_appeal_by_id(pool: asyncpg.Pool, appeal_id: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM "appeals" WHERE "id" = $1', appeal_id)
+
+
 async def get_appeal_by_source(
     pool: asyncpg.Pool, *, user_id: str, source_type: str, source_id: str
 ) -> asyncpg.Record | None:
@@ -45,6 +50,20 @@ async def get_appeal_by_source(
             WHERE "userId" = $1 AND "sourceType" = $2::"AppealSourceType" AND "sourceId" = $3
             """,
             user_id,
+            source_type,
+            source_id,
+        )
+
+
+async def get_appeal_by_source_any_user(
+    pool: asyncpg.Pool, *, source_type: str, source_id: str
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT * FROM "appeals"
+            WHERE "sourceType" = $1::"AppealSourceType" AND "sourceId" = $2
+            """,
             source_type,
             source_id,
         )
