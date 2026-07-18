@@ -9,8 +9,14 @@ from google.genai import errors, types
 
 from app.core.config import get_settings
 from app.db.pool import get_pool
-from app.repositories import governance_copilot_repository
-from app.schemas.governance_copilot import ChatMessage, GovernanceCopilotRequest
+from app.repositories import governance_copilot_repository, governance_copilot_session_repository
+from app.schemas.governance_copilot import (
+    ChatMessage,
+    ChatMessageOut,
+    GovernanceCopilotRequest,
+    GovernanceCopilotResponse,
+    GovernanceCopilotSessionOut,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +152,8 @@ _TOOLS = types.Tool(
 _client = genai.Client(api_key=get_settings().gemini_api_key)
 
 
-def _to_gemini_role(role: str) -> str:
-    return "model" if role == "copilot" else "user"
+def _db_role_to_gemini(role: str) -> str:
+    return "model" if role == "COPILOT" else "user"
 
 
 def _jsonable(value: object) -> object:
@@ -209,11 +215,11 @@ async def _execute_tool(name: str, args: dict) -> object:
     return {"error": f"Unknown tool: {name}"}
 
 
-async def ask(payload: GovernanceCopilotRequest) -> ChatMessage:
-    contents = [
-        types.Content(role=_to_gemini_role(message.role), parts=[types.Part(text=message.text)])
-        for message in payload.messages
-    ]
+async def _run_gemini(contents: list[types.Content]) -> str:
+    """Runs the tool-calling loop against the given conversation so far and
+    returns the copilot's final text reply. Raises HTTPException on failure —
+    callers must not persist anything if this raises, so a failed turn never
+    leaves a half-written exchange in a session's history."""
     config = types.GenerateContentConfig(
         system_instruction=_SYSTEM_INSTRUCTION,
         tools=[_TOOLS],
@@ -231,7 +237,7 @@ async def ask(payload: GovernanceCopilotRequest) -> ChatMessage:
                 part.function_call for part in candidate.content.parts if part.function_call
             ]
             if not function_calls:
-                return ChatMessage(role="copilot", text=response.text or "")
+                return response.text or ""
 
             response_parts = []
             for call in function_calls:
@@ -252,7 +258,70 @@ async def ask(payload: GovernanceCopilotRequest) -> ChatMessage:
             detail="Governance Copilot is temporarily unavailable.",
         ) from error
 
-    return ChatMessage(
-        role="copilot",
-        text="I looked into that but wasn't able to finish within the allotted steps — try narrowing the question.",
+    return (
+        "I looked into that but wasn't able to finish within the allotted steps — "
+        "try narrowing the question."
     )
+
+
+async def ask(payload: GovernanceCopilotRequest, user_id: str) -> GovernanceCopilotResponse:
+    pool = get_pool()
+
+    if payload.sessionId:
+        session = await governance_copilot_session_repository.get_session(
+            pool, payload.sessionId, user_id
+        )
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found."
+            )
+        history = await governance_copilot_session_repository.list_messages_for_session(
+            pool, payload.sessionId
+        )
+    else:
+        history = []
+
+    contents = [
+        types.Content(role=_db_role_to_gemini(m["role"]), parts=[types.Part(text=m["text"])])
+        for m in history
+    ]
+    contents.append(types.Content(role="user", parts=[types.Part(text=payload.message)]))
+
+    reply_text = await _run_gemini(contents)
+
+    session_id = payload.sessionId or await governance_copilot_session_repository.create_session(
+        pool, user_id=user_id
+    )
+    await governance_copilot_session_repository.create_message(
+        pool, session_id=session_id, role="USER", text=payload.message
+    )
+    await governance_copilot_session_repository.create_message(
+        pool, session_id=session_id, role="COPILOT", text=reply_text
+    )
+
+    return GovernanceCopilotResponse(
+        message=ChatMessage(role="copilot", text=reply_text), sessionId=session_id
+    )
+
+
+async def list_sessions(user_id: str) -> list[GovernanceCopilotSessionOut]:
+    pool = get_pool()
+    rows = await governance_copilot_session_repository.list_sessions_for_user(pool, user_id)
+    return [GovernanceCopilotSessionOut(**dict(row)) for row in rows]
+
+
+async def get_session_messages(session_id: str, user_id: str) -> list[ChatMessageOut]:
+    pool = get_pool()
+    session = await governance_copilot_session_repository.get_session(pool, session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found.")
+
+    rows = await governance_copilot_session_repository.list_messages_for_session(pool, session_id)
+    return [
+        ChatMessageOut(
+            role="copilot" if row["role"] == "COPILOT" else "user",
+            text=row["text"],
+            createdAt=row["createdAt"],
+        )
+        for row in rows
+    ]

@@ -85,6 +85,11 @@ enum RecommendationStatus {
   REJECTED
 }
 
+enum CopilotRole {
+  USER
+  COPILOT
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -109,6 +114,7 @@ model User {
   sensitiveDataRules      SensitiveDataRule[]
   policiesCreated         Policy[]
   recommendationsReviewed PolicyRecommendation[]
+  governanceCopilotSessions GovernanceCopilotSession[]
 
   @@map("users")
 }
@@ -347,4 +353,32 @@ model PolicyRecommendation {
   reviewedAt      DateTime?
 
   @@map("policy_recommendations")
+}
+
+// A conversation with the Governance Copilot — scoped to the admin/compliance
+// user who started it, mirroring how AiSession scopes an employee's AI
+// Workspace conversations. Kept separate from AiSession/Prompt rather than
+// reusing them: those carry sensitive-data detection/sanitization fields and
+// an aiToolId FK that don't apply to an internal assistant querying
+// already-governed data via function calls.
+model GovernanceCopilotSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  startedAt DateTime @default(now())
+
+  messages GovernanceCopilotMessage[]
+
+  @@map("governance_copilot_sessions")
+}
+
+model GovernanceCopilotMessage {
+  id        String                   @id @default(uuid())
+  sessionId String
+  session   GovernanceCopilotSession @relation(fields: [sessionId], references: [id])
+  role      CopilotRole
+  text      String
+  createdAt DateTime                 @default(now())
+
+  @@map("governance_copilot_messages")
 }

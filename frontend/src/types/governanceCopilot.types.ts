@@ -5,10 +5,23 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface ChatMessageHistoryItem extends ChatMessage {
+  createdAt: string;
+}
+
 export interface GovernanceCopilotRequest {
-  messages: ChatMessage[];
+  message: string;
+  sessionId?: string | null;
 }
 
 export interface GovernanceCopilotResponse {
   message: ChatMessage;
+  sessionId: string;
+}
+
+export interface GovernanceCopilotSession {
+  id: string;
+  preview: string;
+  lastMessageAt: string;
+  createdAt: string;
 }
