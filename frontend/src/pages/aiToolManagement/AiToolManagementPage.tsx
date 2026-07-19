@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Ban, Trash2, Sparkles, Search, Check, X, FileText } from 'lucide-react';
+import { Plus, Ban, Trash2, Sparkles, Search, Check, X, FileText, RadarIcon } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -8,6 +8,7 @@ import { Pagination } from '@/components/ui/Pagination';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/context/ToastContext';
 import * as aiToolService from '@/services/aiTool.service';
+import * as biasDriftService from '@/services/biasDrift.service';
 import type {
   AiTool,
   AiToolCreateInput,
@@ -15,6 +16,7 @@ import type {
   AiTrustEvaluation,
   TrustEvaluationScores,
 } from '@/types/aiTool.types';
+import type { AiToolUsageScan } from '@/types/biasDrift.types';
 
 const PAGE_SIZE = 6;
 
@@ -96,6 +98,10 @@ export function AiToolManagementPage() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isSubmittingEvaluation, setIsSubmittingEvaluation] = useState(false);
 
+  const [usageScans, setUsageScans] = useState<AiToolUsageScan[]>([]);
+  const [isLoadingScans, setIsLoadingScans] = useState(false);
+  const [isRunningScan, setIsRunningScan] = useState(false);
+
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReasonDraft, setRejectionReasonDraft] = useState('');
@@ -127,6 +133,18 @@ export function AiToolManagementPage() {
       .then(setLatestEvaluation)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Unable to load evaluation.'))
       .finally(() => setIsLoadingEvaluation(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedToolId]);
+
+  useEffect(() => {
+    if (!selectedToolId) return;
+    setUsageScans([]);
+    setIsLoadingScans(true);
+    biasDriftService
+      .getUsageScans(selectedToolId)
+      .then(setUsageScans)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Unable to load usage scans.'))
+      .finally(() => setIsLoadingScans(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedToolId]);
 
@@ -190,6 +208,29 @@ export function AiToolManagementPage() {
       toast.success('AI tool removed. Any pending requesters have been notified.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to remove AI tool.');
+    }
+  };
+
+  const reevaluateAllNow = async () => {
+    setIsRunningScan(true);
+    try {
+      const results = await biasDriftService.reevaluateAllApprovedTools();
+      toast.success(
+        results.length > 0
+          ? `Re-evaluated ${results.length} approved tool(s) from real usage. Governance notified of any regressions.`
+          : 'No approved tools had usage in the last 7 days — nothing to re-evaluate.',
+      );
+      await loadTools();
+      if (selectedToolId) {
+        aiToolService
+          .getLatestTrustEvaluation(selectedToolId)
+          .then(setLatestEvaluation)
+          .catch(() => {});
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to re-evaluate AI tools.');
+    } finally {
+      setIsRunningScan(false);
     }
   };
 
@@ -262,6 +303,47 @@ export function AiToolManagementPage() {
     setRejectionReasonDraft('');
   };
 
+  // Persists tool details + evaluation scores/reasons to the database —
+  // no decision, no new evaluation record, no notification to anyone.
+  // Approve/Reject are the only actions that decide anything and notify;
+  // Save just saves, same as its label says.
+  const saveChanges = async () => {
+    if (!selectedTool || !detailsDraft) return;
+    setIsSubmittingEvaluation(true);
+    try {
+      const updatedTool = await aiToolService.updateAiTool(selectedTool.id, {
+        vendor: detailsDraft.vendor,
+        version: detailsDraft.version,
+        description: detailsDraft.description,
+      });
+      setTools((prev) => prev.map((t) => (t.id === selectedTool.id ? updatedTool : t)));
+
+      // Only an already-persisted evaluation can be edited in place — a
+      // fresh AI proposal that's never been approved/rejected has no row
+      // in the database yet, so there's nothing for this to update.
+      if (evalDraft && latestEvaluation) {
+        const result = await aiToolService.updateTrustEvaluation(selectedTool.id, {
+          ...evalDraft,
+          justification: justificationDraft,
+        });
+        setLatestEvaluation(result);
+        // updateAiTool's response above still carried the pre-edit score —
+        // the registry list needs the freshly recalculated one too.
+        setTools((prev) =>
+          prev.map((t) =>
+            t.id === selectedTool.id ? { ...t, overallScore: result.overallScore } : t,
+          ),
+        );
+      }
+
+      toast.success('Changes saved.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save changes.');
+    } finally {
+      setIsSubmittingEvaluation(false);
+    }
+  };
+
   const submitDecision = async (decision: 'APPROVED' | 'REJECTED') => {
     if (!selectedTool || !evalDraft || !detailsDraft) return;
     if (decision === 'REJECTED' && !rejectionReasonDraft.trim()) {
@@ -313,10 +395,21 @@ export function AiToolManagementPage() {
             Register, approve, and evaluate AI tools available within the organization.
           </p>
         </div>
-        <Button className="w-auto" onClick={startCreateTool}>
-          <Plus size={16} />
-          Register AI Tool
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            className="w-auto"
+            onClick={reevaluateAllNow}
+            isLoading={isRunningScan}
+          >
+            <RadarIcon size={16} />
+            Re-evaluate All
+          </Button>
+          <Button className="w-auto" onClick={startCreateTool}>
+            <Plus size={16} />
+            Register AI Tool
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
@@ -581,6 +674,76 @@ export function AiToolManagementPage() {
                   </Button>
                 </>
               )}
+
+              <div className="mt-6 border-t border-slate-100 pt-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Usage Scan History
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Drift is measured from this tool's real logged prompts — block rate and
+                  sensitive-data rate — not a re-scored opinion. Runs automatically every
+                  Monday; "Re-evaluate All" above updates the trust score instead.
+                </p>
+
+                {isLoadingScans && (
+                  <p className="mt-3 text-sm text-slate-400">Loading scans…</p>
+                )}
+
+                {!isLoadingScans && usageScans.length === 0 && (
+                  <p className="mt-3 text-sm text-slate-400">
+                    No usage scans yet — run one above.
+                  </p>
+                )}
+
+                {!isLoadingScans && usageScans.length > 0 && (
+                  <>
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-xs text-slate-500">
+                        Latest scan —{' '}
+                        {new Date(usageScans[0].scannedAt).toLocaleDateString([], {
+                          month: 'short',
+                          day: 'numeric',
+                        })}{' '}
+                        ({usageScans[0].triggeredBy === 'MANUAL' ? 'manual' : 'scheduled'})
+                      </span>
+                      {usageScans[0].isDriftFlagged && (
+                        <Badge status="critical">Drift Flagged</Badge>
+                      )}
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-xs text-slate-500">Block Rate</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {(usageScans[0].blockRate * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-xs text-slate-500">Sensitive-Data Rate</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {(usageScans[0].sensitiveDataMatchRate * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="mt-2 text-xs text-slate-400">
+                      {usageScans[0].promptCount} prompt(s) in the 7-day window.
+                    </p>
+
+                    {usageScans[0].aiSummary && (
+                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        {usageScans[0].aiSummary}
+                      </div>
+                    )}
+
+                    {usageScans.length > 1 && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        {usageScans.length - 1} earlier scan(s) on record.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             </>
           )}
         </Card>
@@ -702,6 +865,14 @@ export function AiToolManagementPage() {
                   >
                     <X size={15} />
                     Reject
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="w-auto"
+                    onClick={saveChanges}
+                    isLoading={isSubmittingEvaluation}
+                  >
+                    Save
                   </Button>
                   <Button variant="ghost" className="w-auto" onClick={cancelReport}>
                     Cancel

@@ -10,3 +10,4 @@ passlib[bcrypt]==1.7.4
 bcrypt==5.0.0
 google-genai==2.12.1
 truststore==0.10.4
+apscheduler==3.11.3

@@ -89,6 +89,11 @@ enum CopilotRole {
   COPILOT
 }
 
+enum ScanTrigger {
+  MANUAL
+  SCHEDULED
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -114,6 +119,7 @@ model User {
   policiesCreated         Policy[]
   recommendationsReviewed PolicyRecommendation[]
   governanceCopilotSessions GovernanceCopilotSession[]
+  usageScansTriggered     AiToolUsageScan[]
 
   @@map("users")
 }
@@ -141,8 +147,35 @@ model AiTool {
   trustEvaluations  AiTrustEvaluation[]
   sessions          AiSession[]
   fulfilledRequests AiToolRequest[]
+  usageScans        AiToolUsageScan[]
 
   @@map("ai_tools")
+}
+
+// A periodic (or on-demand) scan of a tool's REAL logged usage — block rate
+// and sensitive-data match rate computed directly from Prompt/PromptRiskFinding
+// rows, not re-asking an LLM to re-score the tool's static description. Drift
+// is flagged by comparing this scan's rates against the tool's previous scan.
+// aiSummary is only populated (via Gemini, over a sample of this tool's own
+// flagged transcripts) when a scan is flagged — a qualitative annotation on
+// top of a metrics-triggered alert, not the trigger itself.
+model AiToolUsageScan {
+  id                     String      @id @default(uuid())
+  aiToolId               String
+  aiTool                 AiTool      @relation(fields: [aiToolId], references: [id])
+  windowStart            DateTime
+  windowEnd              DateTime
+  promptCount            Int
+  blockRate              Float
+  sensitiveDataMatchRate Float
+  isDriftFlagged         Boolean     @default(false)
+  aiSummary              String?
+  triggeredBy            ScanTrigger
+  triggeredById          String?
+  triggeredByUser        User?       @relation(fields: [triggeredById], references: [id])
+  scannedAt              DateTime    @default(now())
+
+  @@map("ai_tool_usage_scans")
 }
 
 model AiTrustEvaluation {

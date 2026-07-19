@@ -20,6 +20,7 @@ from app.schemas.ai_tool import (
     AiTrustEvaluationCreate,
     AiTrustEvaluationOut,
     AiTrustEvaluationProposal,
+    AiTrustEvaluationUpdate,
 )
 from app.services.ai_tool_decision_notifier import notify_tool_access_revoked, notify_tool_decision
 
@@ -70,6 +71,25 @@ _EVAL_SCHEMA = types.Schema(
         "orgPolicyReason",
         "justification",
     ],
+)
+
+
+_REEVAL_SYSTEM_INSTRUCTION = (
+    "You are an AI governance risk evaluator inside VeriGate, an enterprise AI "
+    "governance gateway, re-assessing a previously-approved AI tool using its "
+    "REAL usage evidence from the last 7 days — not just the vendor's own "
+    "description. You are given the tool's original profile plus its measured "
+    "block rate (the share of employee prompts to it that were blocked by "
+    "sensitive-data policy), its measured sensitive-data match rate, and a "
+    "sample of its own blocked prompt transcripts if any exist this period. "
+    "Weigh this real evidence heavily as direct signal — a rising block rate "
+    "should lower Security and Compliance scores, a clean record with no "
+    "blocked prompts supports maintaining or raising them. Do not just "
+    "restate the original assessment; ground each score in what you were "
+    "given. For EACH of the six criteria (security, privacy, compliance, "
+    "availability, explainability, organizational policy fit) return an "
+    "integer score 0-100 and a one-sentence reason grounded in the evidence. "
+    "Also provide a 2-3 sentence overall justification."
 )
 
 
@@ -284,6 +304,95 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
     )
 
 
+async def reevaluate_tool_from_usage(
+    tool_id: str,
+    *,
+    block_rate: float,
+    sensitive_data_match_rate: float,
+    blocked_prompt_samples: list[str],
+    actor_id: str,
+) -> AiTrustEvaluationOut | None:
+    """Writes a NEW trust-evaluation snapshot grounded in this tool's real
+    usage evidence — not a re-guess of the static vendor description. Called
+    by the "Re-evaluate All" flow, never by a human directly. Only updates
+    the score; riskTier/isApproved are left untouched, since disabling a
+    tool stays a deliberate human action via Approve/Reject."""
+    pool = get_pool()
+    tool = await ai_tool_repository.get_ai_tool(pool, tool_id)
+    if tool is None:
+        return None
+
+    evidence = (
+        f"AI Tool: {tool['name']}\n"
+        f"Vendor: {tool['vendor']}\n"
+        f"Version: {tool['version'] or 'Unknown'}\n"
+        f"Description: {tool['description'] or 'No description provided.'}\n\n"
+        "Real usage evidence (last 7 days):\n"
+        f"- Block rate: {block_rate:.0%} of prompts sent to this tool were blocked by sensitive-data policy.\n"
+        f"- Sensitive-data match rate: {sensitive_data_match_rate:.0%} of prompts flagged.\n"
+    )
+    if blocked_prompt_samples:
+        evidence += "\nSample blocked prompt transcripts:\n" + "\n".join(
+            f"- {text}" for text in blocked_prompt_samples
+        )
+    else:
+        evidence += "\nNo blocked prompts this period."
+
+    try:
+        client = get_gemini_client()
+        response = await client.aio.models.generate_content(
+            model=_EVAL_MODEL,
+            contents=evidence,
+            config=types.GenerateContentConfig(
+                system_instruction=_REEVAL_SYSTEM_INSTRUCTION,
+                response_mime_type="application/json",
+                response_schema=_EVAL_SCHEMA,
+            ),
+        )
+        data = json.loads(response.text)
+    except (errors.APIError, json.JSONDecodeError, KeyError) as error:
+        logger.error("Automated re-evaluation failed for tool %s: %s", tool_id, error)
+        return None
+
+    scores = [
+        data["securityScore"],
+        data["privacyScore"],
+        data["complianceScore"],
+        data["availabilityScore"],
+        data["explainabilityScore"],
+        data["orgPolicyScore"],
+    ]
+    row = await ai_trust_evaluation_repository.create_trust_evaluation(
+        pool,
+        ai_tool_id=tool_id,
+        security_score=data["securityScore"],
+        security_reason=data["securityReason"],
+        privacy_score=data["privacyScore"],
+        privacy_reason=data["privacyReason"],
+        compliance_score=data["complianceScore"],
+        compliance_reason=data["complianceReason"],
+        availability_score=data["availabilityScore"],
+        availability_reason=data["availabilityReason"],
+        explainability_score=data["explainabilityScore"],
+        explainability_reason=data["explainabilityReason"],
+        org_policy_score=data["orgPolicyScore"],
+        org_policy_reason=data["orgPolicyReason"],
+        overall_score=_overall_score(scores),
+        justification=data["justification"],
+        evaluated_by_id=actor_id,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action="AI Trust Evaluation Auto-Updated (usage-based re-evaluation)",
+        entity_type="AiTrustEvaluation",
+        entity_id=row["id"],
+    )
+
+    return AiTrustEvaluationOut(**dict(row))
+
+
 async def resolve_trust_evaluation(
     tool_id: str, payload: AiTrustEvaluationCreate, reviewer_id: str
 ) -> AiTrustEvaluationOut:
@@ -367,6 +476,58 @@ async def resolve_trust_evaluation(
         )
 
     return AiTrustEvaluationOut(**dict(eval_row))
+
+
+async def update_trust_evaluation(
+    tool_id: str, payload: AiTrustEvaluationUpdate, actor_id: str
+) -> AiTrustEvaluationOut:
+    """Edits the tool's existing latest evaluation in place — no decision
+    change, no notification. For correcting a score/reason without treating
+    it as a fresh approve/reject event."""
+    pool = get_pool()
+    existing = await ai_trust_evaluation_repository.get_latest_trust_evaluation(pool, tool_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No evaluation exists yet for this tool — evaluate it first.",
+        )
+
+    scores = [
+        payload.securityScore,
+        payload.privacyScore,
+        payload.complianceScore,
+        payload.availabilityScore,
+        payload.explainabilityScore,
+        payload.orgPolicyScore,
+    ]
+    row = await ai_trust_evaluation_repository.update_trust_evaluation(
+        pool,
+        existing["id"],
+        security_score=payload.securityScore,
+        security_reason=payload.securityReason,
+        privacy_score=payload.privacyScore,
+        privacy_reason=payload.privacyReason,
+        compliance_score=payload.complianceScore,
+        compliance_reason=payload.complianceReason,
+        availability_score=payload.availabilityScore,
+        availability_reason=payload.availabilityReason,
+        explainability_score=payload.explainabilityScore,
+        explainability_reason=payload.explainabilityReason,
+        org_policy_score=payload.orgPolicyScore,
+        org_policy_reason=payload.orgPolicyReason,
+        overall_score=_overall_score(scores),
+        justification=payload.justification,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action="AI Trust Evaluation Edited",
+        entity_type="AiTrustEvaluation",
+        entity_id=existing["id"],
+    )
+
+    return AiTrustEvaluationOut(**dict(row))
 
 
 async def get_latest_trust_evaluation(tool_id: str) -> AiTrustEvaluationOut | None:
