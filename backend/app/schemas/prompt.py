@@ -20,6 +20,17 @@ class SanitizationChangeOut(BaseModel):
     replacement: str
 
 
+class IntentClassificationOut(BaseModel):
+    """Raw intent-classifier output for this prompt — surfaced regardless of
+    whether it matched a UseCasePolicy, so admins/devs can see what Gemini
+    actually returned (e.g. to debug why a prompt was or wasn't flagged)
+    without needing backend console access."""
+
+    category: str
+    confidence: int
+    matchedUseCase: str | None
+
+
 class PromptSubmitResponse(BaseModel):
     promptId: str
     sessionId: str
@@ -28,6 +39,7 @@ class PromptSubmitResponse(BaseModel):
     riskFindings: list[RiskFindingOut]
     sanitizationChanges: list[SanitizationChangeOut]
     responseText: str | None
+    intentClassification: IntentClassificationOut | None = None
 
 
 class PromptHistoryItem(BaseModel):

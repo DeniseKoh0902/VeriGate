@@ -8,6 +8,7 @@ from app.repositories import (
     notification_repository,
     policy_repository,
     sensitive_data_rule_repository,
+    use_case_policy_repository,
     user_repository,
 )
 from app.schemas.policy import (
@@ -17,6 +18,9 @@ from app.schemas.policy import (
     SensitiveDataRuleCreate,
     SensitiveDataRuleOut,
     SensitiveDataRuleUpdate,
+    UseCasePolicyCreate,
+    UseCasePolicyOut,
+    UseCasePolicyUpdate,
 )
 
 
@@ -37,6 +41,18 @@ def _rule_snapshot(row) -> str:
             "category": row["category"],
             "riskLevel": row["riskLevel"],
             "ruleAction": row["action"],
+        }
+    )
+
+
+def _use_case_policy_snapshot(row) -> str:
+    return json.dumps(
+        {
+            "useCase": row["useCase"],
+            "description": row["description"],
+            "riskLevel": row["riskLevel"],
+            "ruleAction": row["action"],
+            "minConfidence": row["minConfidence"],
         }
     )
 
@@ -223,4 +239,90 @@ async def delete_sensitive_data_rule(rule_id: str, actor_id: str) -> None:
         entity_type="SensitiveDataRule",
         entity_id=rule_id,
         snapshot=_rule_snapshot(rule) if rule else None,
+    )
+
+
+async def list_use_case_policies() -> list[UseCasePolicyOut]:
+    pool = get_pool()
+    rows = await use_case_policy_repository.list_use_case_policies(pool)
+    return [UseCasePolicyOut(**dict(row)) for row in rows]
+
+
+async def list_active_use_case_policies() -> list[UseCasePolicyOut]:
+    pool = get_pool()
+    rows = await use_case_policy_repository.list_active_policies(pool)
+    return [UseCasePolicyOut(**dict(row)) for row in rows]
+
+
+async def create_use_case_policy(
+    payload: UseCasePolicyCreate, created_by_id: str
+) -> UseCasePolicyOut:
+    pool = get_pool()
+    row = await use_case_policy_repository.create_use_case_policy(
+        pool,
+        use_case=payload.useCase,
+        description=payload.description,
+        risk_level=payload.riskLevel,
+        action=payload.action,
+        min_confidence=payload.minConfidence,
+        created_by_id=created_by_id,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=created_by_id,
+        action="Use Case Policy Created",
+        entity_type="UseCasePolicy",
+        entity_id=row["id"],
+        snapshot=_use_case_policy_snapshot(row),
+    )
+
+    return UseCasePolicyOut(**dict(row))
+
+
+async def update_use_case_policy(
+    policy_id: str, payload: UseCasePolicyUpdate, actor_id: str
+) -> UseCasePolicyOut:
+    pool = get_pool()
+    row = await use_case_policy_repository.update_use_case_policy(
+        pool,
+        policy_id,
+        use_case=payload.useCase,
+        description=payload.description,
+        risk_level=payload.riskLevel,
+        action=payload.action,
+        min_confidence=payload.minConfidence,
+        is_active=payload.isActive,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Use case policy not found.")
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action="Use Case Policy Updated",
+        entity_type="UseCasePolicy",
+        entity_id=policy_id,
+        snapshot=_use_case_policy_snapshot(row),
+    )
+
+    return UseCasePolicyOut(**dict(row))
+
+
+async def delete_use_case_policy(policy_id: str, actor_id: str) -> None:
+    pool = get_pool()
+    # Fetched before deletion — see delete_policy for why.
+    policy = await use_case_policy_repository.get_policy_by_id(pool, policy_id)
+    deleted = await use_case_policy_repository.delete_use_case_policy(pool, policy_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Use case policy not found.")
+
+    use_case = policy["useCase"] if policy else policy_id
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action=f'Use Case Policy Removed: "{use_case}"',
+        entity_type="UseCasePolicy",
+        entity_id=policy_id,
+        snapshot=_use_case_policy_snapshot(policy) if policy else None,
     )

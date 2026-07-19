@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from app.schemas.common import UtcDatetime
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
-RuleAction = Literal["ALLOW", "WARN", "BLOCK", "SANITIZE"]
+RuleAction = Literal["ALLOW", "WARN", "BLOCK", "SANITIZE", "REQUIRE_APPROVAL"]
 
 
 class PolicyCreate(BaseModel):
@@ -52,6 +52,35 @@ class SensitiveDataRuleOut(BaseModel):
     category: str
     riskLevel: RiskLevel
     action: RuleAction
+    isActive: bool
+    createdById: str
+    createdAt: UtcDatetime
+
+
+class UseCasePolicyCreate(BaseModel):
+    useCase: str
+    description: str | None = None
+    riskLevel: RiskLevel
+    action: RuleAction
+    minConfidence: int = 70
+
+
+class UseCasePolicyUpdate(BaseModel):
+    useCase: str | None = None
+    description: str | None = None
+    riskLevel: RiskLevel | None = None
+    action: RuleAction | None = None
+    minConfidence: int | None = None
+    isActive: bool | None = None
+
+
+class UseCasePolicyOut(BaseModel):
+    id: str
+    useCase: str
+    description: str | None
+    riskLevel: RiskLevel
+    action: RuleAction
+    minConfidence: int
     isActive: bool
     createdById: str
     createdAt: UtcDatetime

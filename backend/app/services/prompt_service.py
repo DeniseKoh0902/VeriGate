@@ -1,6 +1,7 @@
 import logging
 import time
 
+import asyncpg
 from fastapi import HTTPException
 from fastapi import status as http_status
 from google.genai import errors, types
@@ -14,18 +15,20 @@ from app.repositories import (
     prompt_repository,
     risk_alert_repository,
     sensitive_data_rule_repository,
+    use_case_policy_repository,
     user_repository,
 )
 from app.schemas.prompt import (
     AvailableModelOut,
     ChatSessionOut,
+    IntentClassificationOut,
     PromptHistoryItem,
     PromptSubmitRequest,
     PromptSubmitResponse,
     RiskFindingOut,
     SanitizationChangeOut,
 )
-from app.services import detection_service
+from app.services import detection_service, intent_service
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +95,50 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     matches = detection_service.detect(payload.promptText, active_rules)
     action = detection_service.resolve_action(matches)
 
+    # Sensitive-data detection above answers "does this prompt contain
+    # sensitive data?" — this answers the separate question "what decision is
+    # this prompt trying to help make?", since a prompt like "which candidate
+    # should we hire?" trips no data pattern at all. Only bother calling the
+    # classifier if there's at least one use-case policy configured to act on
+    # it, so a workspace with none defined pays no extra latency/cost.
+    matched_use_case: asyncpg.Record | None = None
+    intent: intent_service.IntentClassification | None = None
+    active_use_case_policies = await use_case_policy_repository.list_active_policies(pool)
+    if active_use_case_policies:
+        use_case_options = [
+            intent_service.UseCaseOption(label=policy["useCase"], description=policy["description"])
+            for policy in active_use_case_policies
+        ]
+        intent = await intent_service.classify_intent(payload.promptText, use_case_options)
+        matched_use_case = next(
+            (
+                policy
+                for policy in active_use_case_policies
+                if policy["useCase"] == intent.category
+                and intent.confidence >= policy["minConfidence"]
+            ),
+            None,
+        )
+        logger.info(
+            "Intent classification: category=%r confidence=%d matched=%s",
+            intent.category,
+            intent.confidence,
+            matched_use_case["useCase"] if matched_use_case else None,
+        )
+        if matched_use_case is not None:
+            action = detection_service.most_restrictive([action, matched_use_case["action"]])
+
     sanitization_changes: list[detection_service.SanitizationChange] = []
 
     if action == "BLOCK":
         status = "BLOCKED"
+        sanitized_text = None
+        final_text = None
+    elif action == "REQUIRE_APPROVAL":
+        # Distinct from BLOCK: this isn't a permanent refusal, just a hold
+        # until a human reviews it — nothing is forwarded automatically
+        # either way, so the prompt is treated the same as BLOCK here.
+        status = "PENDING_APPROVAL"
         sanitized_text = None
         final_text = None
     elif action == "SANITIZE":
@@ -128,18 +171,44 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
             note=f'Matched "{match.matched_text}" against an active Sensitive Data Rule.',
         )
 
-    if action == "BLOCK":
-        alert_type = matches[0].category if matches else "Policy Violation"
-        severity = matches[0].risk_level if matches else "HIGH"
+    if matched_use_case is not None:
+        await prompt_repository.create_prompt_risk_finding(
+            pool,
+            prompt_id=prompt["id"],
+            rule_id=None,
+            category=matched_use_case["useCase"],
+            risk_level=matched_use_case["riskLevel"],
+            note=(
+                f'Matched Use Case Policy "{matched_use_case["useCase"]}" '
+                f'(intent confidence {intent.confidence}%).'
+            ),
+        )
+
+    if action in ("BLOCK", "REQUIRE_APPROVAL"):
+        # A use-case match takes precedence for the alert's headline reason
+        # since it's the more specific signal — a sensitive-data match may
+        # have also fired here but be incidental to why this got flagged.
+        if matched_use_case is not None:
+            alert_type = matched_use_case["useCase"]
+            severity = matched_use_case["riskLevel"]
+            verb = "held for approval" if action == "REQUIRE_APPROVAL" else "blocked"
+            description = f'Prompt {verb} by Use Case Policy "{matched_use_case["useCase"]}".'
+        else:
+            alert_type = matches[0].category if matches else "Policy Violation"
+            severity = matches[0].risk_level if matches else "HIGH"
+            description = (
+                f'Prompt blocked by Sensitive Data Rule "{matches[0].category}".'
+                if matches
+                else "Prompt blocked by governance policy."
+            )
+
         alert_row = await risk_alert_repository.create_risk_alert(
             pool,
             user_id=user_id,
             prompt_id=prompt["id"],
             alert_type=alert_type,
             severity=severity,
-            description=f'Prompt blocked by Sensitive Data Rule "{matches[0].category}".'
-            if matches
-            else "Prompt blocked by governance policy.",
+            description=description,
         )
 
         # Same blind spot AI Tool Management already solved for new tool
@@ -164,7 +233,7 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     await audit_log_repository.create_audit_log(
         pool,
         user_id=user_id,
-        action=f"Prompt {status.title()}",
+        action=f"Prompt {status.replace('_', ' ').title()}",
         entity_type="Prompt",
         entity_id=prompt["id"],
     )
@@ -181,20 +250,37 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
             response_time_ms=elapsed_ms,
         )
 
+    risk_findings = [
+        RiskFindingOut(category=m.category, riskLevel=m.risk_level, note=m.matched_text)
+        for m in matches
+    ]
+    if matched_use_case is not None:
+        risk_findings.append(
+            RiskFindingOut(
+                category=matched_use_case["useCase"],
+                riskLevel=matched_use_case["riskLevel"],
+                note=f"Use case intent match (confidence {intent.confidence}%).",
+            )
+        )
+
     return PromptSubmitResponse(
         promptId=prompt["id"],
         sessionId=session_id,
         status=status,
         sanitizedText=sanitized_text,
-        riskFindings=[
-            RiskFindingOut(category=m.category, riskLevel=m.risk_level, note=m.matched_text)
-            for m in matches
-        ],
+        riskFindings=risk_findings,
         sanitizationChanges=[
             SanitizationChangeOut(original=c.original, replacement=c.replacement)
             for c in sanitization_changes
         ],
         responseText=response_text,
+        intentClassification=IntentClassificationOut(
+            category=intent.category,
+            confidence=intent.confidence,
+            matchedUseCase=matched_use_case["useCase"] if matched_use_case else None,
+        )
+        if intent
+        else None,
     )
 
 

@@ -30,6 +30,7 @@ enum PromptStatus {
   FORWARDED
   BLOCKED
   SANITIZED
+  PENDING_APPROVAL
 }
 
 enum RiskLevel {
@@ -44,6 +45,7 @@ enum RuleAction {
   WARN
   BLOCK
   SANITIZE
+  REQUIRE_APPROVAL
 }
 
 enum RequestStatus {
@@ -116,6 +118,7 @@ model User {
   appealsReviewed         Appeal[]               @relation("AppealReviewedBy")
   notifications           Notification[]
   sensitiveDataRules      SensitiveDataRule[]
+  useCasePolicies         UseCasePolicy[]
   policiesCreated         Policy[]
   recommendationsReviewed PolicyRecommendation[]
   governanceCopilotSessions GovernanceCopilotSession[]
@@ -273,6 +276,33 @@ model SensitiveDataRule {
   findings PromptRiskFinding[]
 
   @@map("sensitive_data_rules")
+}
+
+// Governs what an AI is allowed to *decide*, not what data it can see —
+// SensitiveDataRule restricts data categories, this restricts use cases
+// (e.g. "Hiring Decisions" -> REQUIRE_APPROVAL) regardless of whether the
+// prompt contains any sensitive data at all. useCase is matched against the
+// fixed vocabulary intent_service.py classifies prompts into; minConfidence
+// guards against a low-confidence classification triggering enforcement on
+// an ordinary prompt that merely brushes against a governed topic.
+model UseCasePolicy {
+  id            String     @id @default(uuid())
+  useCase       String
+  // Admin-authored context for the intent classifier — since useCase is now
+  // a free-text label rather than a fixed enum, this is what gives Gemini
+  // enough signal to recognize the category from a prompt (e.g. useCase
+  // "Employee Monitoring" alone is ambiguous; the description can specify
+  // "without the employee's knowledge or consent").
+  description   String?
+  riskLevel     RiskLevel
+  action        RuleAction
+  minConfidence Int        @default(70)
+  isActive      Boolean    @default(true)
+  createdById   String
+  createdBy     User       @relation(fields: [createdById], references: [id])
+  createdAt     DateTime   @default(now())
+
+  @@map("use_case_policies")
 }
 
 model Policy {
