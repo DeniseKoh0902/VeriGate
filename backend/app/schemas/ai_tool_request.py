@@ -10,7 +10,6 @@ RequestStatus = Literal["PENDING", "APPROVED", "REJECTED"]
 class AiToolRequestCreate(BaseModel):
     toolName: str
     businessReason: str
-    department: str
 
 
 class AiToolRequestOut(BaseModel):

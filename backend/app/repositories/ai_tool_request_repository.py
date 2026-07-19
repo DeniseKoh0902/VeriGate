@@ -26,6 +26,20 @@ async def list_pending_requests_by_tool_name(
         )
 
 
+async def list_approved_requests_by_tool_id(
+    pool: asyncpg.Pool, tool_id: str
+) -> list[asyncpg.Record]:
+    """Employees currently granted access via this tool — used when an admin
+    disables a previously-approved tool, so everyone whose access just got
+    revoked can be told, instead of silently hitting a 403 on their next
+    prompt."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            'SELECT * FROM "ai_tool_requests" WHERE "approvedToolId" = $1 AND "status" = \'APPROVED\'',
+            tool_id,
+        )
+
+
 async def resolve_request(
     pool: asyncpg.Pool,
     request_id: str,

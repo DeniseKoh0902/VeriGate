@@ -23,6 +23,7 @@ class AiToolUpdate(BaseModel):
     endpoint: str | None = None
     description: str | None = None
     riskTier: AiToolRiskTier | None = None
+    decisionNotes: str | None = None
 
 
 class AiToolOut(BaseModel):

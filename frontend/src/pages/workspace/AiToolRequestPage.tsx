@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import * as aiToolRequestService from '@/services/aiToolRequest.service';
 import type {
@@ -12,7 +13,6 @@ import type {
   RequestStatus,
 } from '@/types/aiToolRequest.types';
 
-const departments = ['Finance', 'Engineering', 'Legal', 'Marketing', 'HR'];
 const REQUESTS_PER_PAGE = 5;
 
 const statusBadge: Record<RequestStatus, 'good' | 'warning' | 'critical'> = {
@@ -29,11 +29,11 @@ const statusLabel: Record<RequestStatus, string> = {
 
 const emptyForm: AiToolRequestCreateInput = {
   toolName: '',
-  department: departments[0],
   businessReason: '',
 };
 
 export function AiToolRequestPage() {
+  const { user } = useAuth();
   const toast = useToast();
   const [requests, setRequests] = useState<AiToolRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,9 +58,7 @@ export function AiToolRequestPage() {
     loadRequests();
   }, []);
 
-  const isFormValid = Boolean(
-    form.toolName.trim() && form.department.trim() && form.businessReason.trim(),
-  );
+  const isFormValid = Boolean(form.toolName.trim() && form.businessReason.trim());
 
   const totalPages = Math.max(1, Math.ceil(requests.length / REQUESTS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -123,17 +121,9 @@ export function AiToolRequestPage() {
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Department
               </label>
-              <select
-                value={form.department}
-                onChange={(e) => setForm({ ...form, department: e.target.value })}
-                className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-              >
-                {departments.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                {user?.department ?? '—'}
+              </div>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium uppercase text-slate-700">

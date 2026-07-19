@@ -50,6 +50,43 @@ async def notify_tool_decision(
         logger.error("Failed to send AI tool decision email to %s", user["email"])
 
 
+async def notify_tool_access_revoked(
+    pool: asyncpg.Pool,
+    *,
+    request_row: asyncpg.Record,
+    reason: str | None,
+) -> None:
+    """Notifies (in-app + email) an employee whose previously-approved AI
+    tool access was just disabled — without this, they'd only find out the
+    next time a prompt to it gets rejected."""
+    user = await user_repository.get_user_by_id(pool, request_row["userId"])
+    if user is None:
+        return
+
+    tool_name = request_row["toolName"]
+    title = f'Access to "{tool_name}" has been revoked'
+    message = reason or f'"{tool_name}" is no longer approved for use.'
+
+    await notification_repository.create_notification(
+        pool,
+        user_id=request_row["userId"],
+        title=title,
+        message=message,
+        notification_type="AI_TOOL_ACCESS_REVOKED",
+        related_entity_type="AiToolRequest",
+        related_entity_id=request_row["id"],
+    )
+
+    try:
+        await send_email(
+            to=user["email"],
+            subject=title,
+            html_body=f"<p>Hi {user['name']},</p><p>{message}</p>",
+        )
+    except Exception:
+        logger.error("Failed to send access-revoked email to %s", user["email"])
+
+
 async def notify_governance_new_tool_request(
     pool: asyncpg.Pool,
     *,

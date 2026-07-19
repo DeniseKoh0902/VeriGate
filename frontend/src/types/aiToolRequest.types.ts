@@ -17,5 +17,4 @@ export interface AiToolRequest {
 export interface AiToolRequestCreateInput {
   toolName: string;
   businessReason: string;
-  department: string;
 }

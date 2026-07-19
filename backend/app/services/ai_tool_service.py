@@ -21,7 +21,7 @@ from app.schemas.ai_tool import (
     AiTrustEvaluationOut,
     AiTrustEvaluationProposal,
 )
-from app.services.ai_tool_decision_notifier import notify_tool_decision
+from app.services.ai_tool_decision_notifier import notify_tool_access_revoked, notify_tool_decision
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,7 @@ async def update_ai_tool(tool_id: str, payload: AiToolUpdate, actor_id: str) -> 
         risk_tier=payload.riskTier,
         is_approved=False if payload.riskTier else None,
         approved_by_id=None,
+        decision_notes=payload.decisionNotes if payload.riskTier else None,
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI tool not found.")
@@ -152,6 +153,18 @@ async def update_ai_tool(tool_id: str, payload: AiToolUpdate, actor_id: str) -> 
         entity_id=tool_id,
         snapshot=_tool_snapshot(row),
     )
+
+    if payload.riskTier == "BLOCKED":
+        # Anyone previously granted access via an approved request loses it
+        # the moment this tool is disabled — tell them now instead of
+        # letting them find out from a 403 on their next prompt.
+        affected_requests = await ai_tool_request_repository.list_approved_requests_by_tool_id(
+            pool, tool_id
+        )
+        for request_row in affected_requests:
+            await notify_tool_access_revoked(
+                pool, request_row=request_row, reason=payload.decisionNotes
+            )
 
     return AiToolOut(**dict(row))
 
@@ -180,6 +193,25 @@ async def delete_ai_tool(tool_id: str, actor_id: str) -> None:
         entity_id=tool_id,
         snapshot=snapshot,
     )
+
+    # Approved/evaluated tools can't reach this point (the FK check above
+    # already 409s them) — but a still-pending registration can, so any
+    # requester waiting on it needs to be told it's gone rather than left
+    # pointing at a tool name nothing will ever create again.
+    if tool is not None:
+        dangling_requests = await ai_tool_request_repository.list_pending_requests_by_tool_name(
+            pool, tool_name
+        )
+        reason = "This AI tool's registration was removed by an administrator."
+        for request_row in dangling_requests:
+            resolved = await ai_tool_request_repository.resolve_request(
+                pool,
+                request_row["id"],
+                request_status="REJECTED",
+                reviewed_by_id=actor_id,
+                rejection_reason=reason,
+            )
+            await notify_tool_decision(pool, request_row=resolved, decision="REJECTED", reason=reason)
 
 
 async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:

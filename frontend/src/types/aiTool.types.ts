@@ -33,6 +33,7 @@ export interface AiToolUpdateInput {
   endpoint?: string | null;
   description?: string | null;
   riskTier?: AiToolRiskTier;
+  decisionNotes?: string | null;
 }
 
 export interface TrustEvaluationScores {

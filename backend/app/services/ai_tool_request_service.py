@@ -21,12 +21,13 @@ async def list_my_requests(user_id: str) -> list[AiToolRequestOut]:
 
 async def create_request(payload: AiToolRequestCreate, user_id: str) -> AiToolRequestOut:
     pool = get_pool()
+    requester = await user_repository.get_user_by_id(pool, user_id)
     row = await ai_tool_request_repository.create_request(
         pool,
         user_id=user_id,
         tool_name=payload.toolName,
         business_reason=payload.businessReason,
-        department=payload.department,
+        department=requester["department"] if requester else "Unknown",
     )
 
     await audit_log_repository.create_audit_log(
@@ -72,7 +73,6 @@ async def create_request(payload: AiToolRequestCreate, user_id: str) -> AiToolRe
         # and tell governance reviewers it's waiting on them. Without this,
         # a request sits invisible to admins forever.
         new_tool = await ai_tool_repository.create_pending_ai_tool_by_name(pool, payload.toolName)
-        requester = await user_repository.get_user_by_id(pool, user_id)
         await notify_governance_new_tool_request(
             pool,
             tool_id=new_tool["id"],
