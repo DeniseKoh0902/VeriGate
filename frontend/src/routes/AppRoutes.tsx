@@ -16,6 +16,7 @@ import { AppealQueuePage } from '@/pages/appealQueue';
 import { AuditLogsPage } from '@/pages/auditLogs';
 import { AiPolicyRecommendationPage } from '@/pages/aiPolicyRecommendation';
 import { GovernanceCopilotPage } from '@/pages/governanceCopilot';
+import { NotificationsPage } from '@/pages/notifications';
 import {
   AiWorkspacePage,
   AiToolRequestPage,
@@ -25,6 +26,19 @@ import {
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { EmployeeLayout } from '@/components/layout/EmployeeLayout';
 import { ProtectedRoute } from '@/routes/ProtectedRoute';
+import { useAuth } from '@/context/AuthContext';
+
+// Renders whichever layout (sidebar + header) matches the signed-in user's
+// actual role — for routes reachable from both sides of the app, like
+// Notifications. A path can only be registered once; picking the chrome at
+// render time (rather than duplicating the route under both role-gated
+// blocks) avoids two <Route> elements ever claiming the same path, which
+// React Router resolves by declaration order regardless of role — not by
+// which block actually matches the current user.
+function GovernedLayout() {
+  const { user } = useAuth();
+  return user?.role === 'ADMIN' ? <AdminLayout /> : <EmployeeLayout />;
+}
 
 export function AppRoutes() {
   return (
@@ -59,6 +73,12 @@ export function AppRoutes() {
           <Route path="/workspace/tool-request" element={<AiToolRequestPage />} />
           <Route path="/workspace/compliance-overview" element={<MyComplianceOverviewPage />} />
           <Route path="/workspace/policies" element={<MyPoliciesPage />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'EMPLOYEE']} />}>
+        <Route element={<GovernedLayout />}>
+          <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
       </Route>
     </Routes>

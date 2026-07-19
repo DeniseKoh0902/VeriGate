@@ -10,9 +10,11 @@ from app.db.pool import get_pool
 from app.repositories import (
     ai_tool_repository,
     audit_log_repository,
+    notification_repository,
     prompt_repository,
     risk_alert_repository,
     sensitive_data_rule_repository,
+    user_repository,
 )
 from app.schemas.prompt import (
     AvailableModelOut,
@@ -127,16 +129,37 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
         )
 
     if action == "BLOCK":
-        await risk_alert_repository.create_risk_alert(
+        alert_type = matches[0].category if matches else "Policy Violation"
+        severity = matches[0].risk_level if matches else "HIGH"
+        alert_row = await risk_alert_repository.create_risk_alert(
             pool,
             user_id=user_id,
             prompt_id=prompt["id"],
-            alert_type=matches[0].category if matches else "Policy Violation",
-            severity=matches[0].risk_level if matches else "HIGH",
+            alert_type=alert_type,
+            severity=severity,
             description=f'Prompt blocked by Sensitive Data Rule "{matches[0].category}".'
             if matches
             else "Prompt blocked by governance policy.",
         )
+
+        # Same blind spot AI Tool Management already solved for new tool
+        # requests — without this, a new risk alert sits invisible to admins
+        # until someone happens to check Risk Alert Center.
+        employee = await user_repository.get_user_by_id(pool, user_id)
+        reviewers = await user_repository.list_governance_users(pool)
+        for reviewer in reviewers:
+            await notification_repository.create_notification(
+                pool,
+                user_id=reviewer["id"],
+                title=f"New risk alert: {alert_type}",
+                message=(
+                    f'{employee["name"] if employee else "An employee"} triggered a '
+                    f'{severity.lower()} risk alert on "{ai_tool["name"]}".'
+                ),
+                notification_type="RISK_ALERT_CREATED",
+                related_entity_type="RiskAlert",
+                related_entity_id=alert_row["id"],
+            )
 
     await audit_log_repository.create_audit_log(
         pool,

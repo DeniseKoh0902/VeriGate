@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 
 from app.core.security import hash_password
 from app.db.pool import get_pool
-from app.repositories import audit_log_repository, user_repository
+from app.repositories import audit_log_repository, notification_repository, user_repository
 from app.schemas.user import UserCreate, UserOut, UserUpdate
 
 
@@ -16,6 +16,33 @@ def _user_snapshot(row) -> str:
             "targetDepartment": row["department"],
             "targetIsActive": row["isActive"],
         }
+    )
+
+
+async def _notify_account_changes(pool, *, before, after) -> None:
+    """One combined notification covering whatever actually changed —
+    the edit form always resubmits every field, so comparing against the
+    pre-update row (rather than just checking which payload fields are
+    non-null) is what tells us what's real vs. unchanged."""
+    changes: list[str] = []
+    if before["role"] != after["role"]:
+        changes.append(f'your role is now {after["role"].title()}')
+    if before["department"] != after["department"]:
+        changes.append(f'your department is now {after["department"]}')
+    if before["isActive"] != after["isActive"]:
+        changes.append(
+            "your account has been reactivated" if after["isActive"] else "your account has been deactivated"
+        )
+
+    if not changes:
+        return
+
+    await notification_repository.create_notification(
+        pool,
+        user_id=after["id"],
+        title="Your account was updated",
+        message="An administrator updated your account: " + "; ".join(changes) + ".",
+        notification_type="EMPLOYEE_ACCOUNT_UPDATED",
     )
 
 
@@ -57,6 +84,7 @@ async def create_user(payload: UserCreate, actor_id: str) -> UserOut:
 
 async def update_user(user_id: str, payload: UserUpdate, actor_id: str) -> UserOut:
     pool = get_pool()
+    before = await user_repository.get_user_by_id(pool, user_id)
     row = await user_repository.update_user(
         pool,
         user_id,
@@ -76,6 +104,9 @@ async def update_user(user_id: str, payload: UserUpdate, actor_id: str) -> UserO
         entity_id=user_id,
         snapshot=_user_snapshot(row),
     )
+
+    if before is not None:
+        await _notify_account_changes(pool, before=before, after=row)
 
     return UserOut(**dict(row))
 

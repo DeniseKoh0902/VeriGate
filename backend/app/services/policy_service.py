@@ -3,7 +3,13 @@ import json
 from fastapi import HTTPException, status
 
 from app.db.pool import get_pool
-from app.repositories import audit_log_repository, policy_repository, sensitive_data_rule_repository
+from app.repositories import (
+    audit_log_repository,
+    notification_repository,
+    policy_repository,
+    sensitive_data_rule_repository,
+    user_repository,
+)
 from app.schemas.policy import (
     PolicyCreate,
     PolicyOut,
@@ -33,6 +39,25 @@ def _rule_snapshot(row) -> str:
             "ruleAction": row["action"],
         }
     )
+
+
+async def _notify_affected_employees(pool, policy_row) -> None:
+    department = policy_row["appliesToDepartment"]
+    if department is None or department == "All Departments":
+        employees = await user_repository.list_all_active_employees(pool)
+    else:
+        employees = await user_repository.list_active_employees_by_department(pool, department)
+
+    for employee in employees:
+        await notification_repository.create_notification(
+            pool,
+            user_id=employee["id"],
+            title=f'New policy: "{policy_row["name"]}"',
+            message=policy_row["description"] or "A new governance policy now applies to you.",
+            notification_type="POLICY_CREATED",
+            related_entity_type="Policy",
+            related_entity_id=policy_row["id"],
+        )
 
 
 async def list_policies() -> list[PolicyOut]:
@@ -72,6 +97,8 @@ async def create_policy(payload: PolicyCreate, created_by_id: str) -> PolicyOut:
         entity_id=row["id"],
         snapshot=_policy_snapshot(row),
     )
+
+    await _notify_affected_employees(pool, row)
 
     return PolicyOut(**dict(row))
 

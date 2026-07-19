@@ -26,6 +26,21 @@ async def list_pending_requests_by_tool_name(
         )
 
 
+async def list_rejected_requests_by_tool_name(
+    pool: asyncpg.Pool, tool_name: str
+) -> list[asyncpg.Record]:
+    """Every rejected request for this tool name, not just the one behind a
+    given appeal — when an overturned appeal proves the tool itself wasn't
+    the problem, every employee who was turned down for it benefits, same as
+    a fresh APPROVED trust evaluation resolves every pending request for the
+    tool at once."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            'SELECT * FROM "ai_tool_requests" WHERE "toolName" = $1 AND "status" = \'REJECTED\'',
+            tool_name,
+        )
+
+
 async def list_approved_requests_by_tool_id(
     pool: asyncpg.Pool, tool_id: str
 ) -> list[asyncpg.Record]:

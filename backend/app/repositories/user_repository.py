@@ -50,6 +50,30 @@ async def list_governance_users(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         )
 
 
+async def list_active_employees_by_department(
+    pool: asyncpg.Pool, department: str
+) -> list[asyncpg.Record]:
+    """Active EMPLOYEE-role users in one department — the audience for a
+    policy scoped to that department, so admins who authored it aren't
+    notified about their own action."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT "id", "name", "email" FROM "users"
+            WHERE "department" = $1 AND "role" = 'EMPLOYEE' AND "isActive" = true
+            """,
+            department,
+        )
+
+
+async def list_all_active_employees(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Every active EMPLOYEE-role user — the audience for an org-wide policy."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            'SELECT "id", "name", "email" FROM "users" WHERE "role" = \'EMPLOYEE\' AND "isActive" = true'
+        )
+
+
 async def list_users(pool: asyncpg.Pool) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         return await conn.fetch(
