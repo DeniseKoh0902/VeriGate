@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import * as notificationService from '@/services/notification.service';
+import { resolveNotificationLink } from '@/lib/notificationLink';
+import { useAuth } from '@/context/AuthContext';
+import { useNotifications } from '@/context/NotificationContext';
 import type { AppNotification } from '@/types/notification.types';
 
 function timeAgo(iso: string): string {
@@ -16,22 +19,12 @@ function timeAgo(iso: string): string {
 }
 
 export function NotificationBell() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const { notifications, unreadCount, hasLoadedList, loadNotifications, markRead, markAllRead } =
+    useNotifications();
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const refreshUnreadCount = () => {
-    notificationService
-      .getUnreadCount()
-      .then((result) => setUnreadCount(result.count))
-      .catch(() => {});
-  };
-
-  useEffect(() => {
-    refreshUnreadCount();
-  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -55,28 +48,17 @@ export function NotificationBell() {
 
   const handleToggle = () => {
     setIsOpen((prev) => !prev);
-    if (!hasLoaded) {
-      notificationService
-        .listNotifications()
-        .then(setNotifications)
-        .catch(() => {})
-        .finally(() => setHasLoaded(true));
+    if (!hasLoadedList) {
+      loadNotifications().catch(() => {});
     }
   };
 
   const handleNotificationClick = (notification: AppNotification) => {
-    if (notification.isRead) return;
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n)),
-    );
-    setUnreadCount((prev) => Math.max(0, prev - 1));
-    notificationService.markNotificationRead(notification.id).catch(() => {});
-  };
-
-  const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    setUnreadCount(0);
-    notificationService.markAllNotificationsRead().catch(() => {});
+    markRead(notification);
+    setIsOpen(false);
+    if (!user) return;
+    const link = resolveNotificationLink(notification, user.role);
+    if (link) navigate(link);
   };
 
   return (
@@ -102,7 +84,7 @@ export function NotificationBell() {
             {unreadCount > 0 && (
               <button
                 type="button"
-                onClick={handleMarkAllRead}
+                onClick={markAllRead}
                 className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
               >
                 <CheckCheck size={13} />
@@ -112,12 +94,12 @@ export function NotificationBell() {
           </div>
 
           <div className="max-h-80 overflow-y-auto">
-            {hasLoaded && notifications.length === 0 && (
+            {hasLoadedList && notifications.length === 0 && (
               <p className="px-4 py-8 text-center text-sm text-slate-400">
                 No notifications yet.
               </p>
             )}
-            {notifications.map((notification) => (
+            {notifications.slice(0, 8).map((notification) => (
               <button
                 key={notification.id}
                 type="button"
@@ -140,6 +122,14 @@ export function NotificationBell() {
               </button>
             ))}
           </div>
+
+          <Link
+            to="/notifications"
+            onClick={() => setIsOpen(false)}
+            className="block border-t border-slate-100 px-4 py-2.5 text-center text-xs font-medium text-blue-600 hover:bg-slate-50 hover:text-blue-700"
+          >
+            View all notifications
+          </Link>
         </div>
       )}
     </div>

@@ -5,12 +5,14 @@ from fastapi import HTTPException, status
 
 from app.db.pool import get_pool
 from app.repositories import (
+    ai_tool_repository,
     ai_tool_request_repository,
     appeal_repository,
     audit_log_repository,
     notification_repository,
     prompt_repository,
     risk_alert_repository,
+    user_repository,
 )
 from app.schemas.appeal import (
     AppealAdminOut,
@@ -22,6 +24,7 @@ from app.schemas.appeal import (
 )
 from app.schemas.prompt import RiskFindingOut
 from app.services import incident_service, prompt_service
+from app.services.ai_tool_decision_notifier import notify_tool_decision
 
 # Maps an appeal's sourceType to (how to fetch the underlying record, how to
 # describe it). Prisma can't express a real FK across three source tables
@@ -86,6 +89,57 @@ async def _unblock_prompt_if_overturned(pool: asyncpg.Pool, appeal: asyncpg.Reco
     )
 
 
+async def _reinstate_tool_if_overturned(
+    pool: asyncpg.Pool, appeal: asyncpg.Record, reviewer_id: str
+) -> None:
+    """When a tool-rejection appeal is overturned, the tool should become
+    usable again — the same governance effect as approving a trust
+    evaluation, just without new scores since an appeal isn't a
+    re-evaluation. Every other still-REJECTED request for the same tool name
+    is resolved the same way too, mirroring resolve_trust_evaluation's own
+    "one tool-level decision applies to everyone who asked" behavior."""
+    if appeal["sourceType"] != "TOOL_REJECTION":
+        return
+
+    request_row = await ai_tool_request_repository.get_request_by_id(pool, appeal["sourceId"])
+    if request_row is None or request_row["status"] != "REJECTED":
+        return
+
+    tool = await ai_tool_repository.get_ai_tool_by_name(pool, request_row["toolName"])
+    if tool is None:
+        return
+
+    await ai_tool_repository.update_ai_tool(
+        pool,
+        tool["id"],
+        risk_tier="APPROVED",
+        is_approved=True,
+        approved_by_id=reviewer_id,
+        decision_notes=None,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=reviewer_id,
+        action="AI Tool Reinstated via Appeal",
+        entity_type="AiTool",
+        entity_id=tool["id"],
+    )
+
+    rejected_requests = await ai_tool_request_repository.list_rejected_requests_by_tool_name(
+        pool, request_row["toolName"]
+    )
+    for req in rejected_requests:
+        resolved = await ai_tool_request_repository.resolve_request(
+            pool,
+            req["id"],
+            request_status="APPROVED",
+            reviewed_by_id=reviewer_id,
+            approved_tool_id=tool["id"],
+        )
+        await notify_tool_decision(pool, request_row=resolved, decision="APPROVED", reason=None)
+
+
 async def _to_admin_out(pool: asyncpg.Pool, row: asyncpg.Record) -> AppealAdminOut:
     description = await _describe_appeal_source(pool, row)
 
@@ -142,6 +196,23 @@ async def resolve_appeal(
 
     if row["resolution"] == "OVERTURNED":
         await _unblock_prompt_if_overturned(pool, row)
+        await _reinstate_tool_if_overturned(pool, row, reviewer_id)
+
+    overturned = row["resolution"] == "OVERTURNED"
+    await notification_repository.create_notification(
+        pool,
+        user_id=row["userId"],
+        title=f"Your appeal was {'overturned' if overturned else 'upheld'}",
+        message=row["resolutionNotes"]
+        or (
+            "The original decision has been reversed."
+            if overturned
+            else "The original decision stands."
+        ),
+        notification_type="APPEAL_RESOLVED",
+        related_entity_type="Appeal",
+        related_entity_id=appeal_id,
+    )
 
     await audit_log_repository.create_audit_log(
         pool,
@@ -261,5 +332,18 @@ async def create_appeal(payload: AppealCreate, user_id: str) -> AppealOut:
         entity_type="Appeal",
         entity_id=row["id"],
     )
+
+    description = await _describe_appeal_source(pool, row)
+    reviewers = await user_repository.list_governance_users(pool)
+    for reviewer in reviewers:
+        await notification_repository.create_notification(
+            pool,
+            user_id=reviewer["id"],
+            title="New appeal submitted",
+            message=f'{description["title"]} — awaiting review.',
+            notification_type="APPEAL_SUBMITTED",
+            related_entity_type="Appeal",
+            related_entity_id=row["id"],
+        )
 
     return AppealOut(**dict(row))

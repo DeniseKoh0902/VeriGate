@@ -5,6 +5,7 @@ from app.db.pool import get_pool
 from app.repositories import (
     appeal_repository,
     audit_log_repository,
+    notification_repository,
     prompt_repository,
     risk_alert_repository,
 )
@@ -84,6 +85,21 @@ async def _set_status(alert_id: str, alert_status: str, reviewer_id: str) -> Ris
     )
 
     row = await risk_alert_repository.get_admin_alert_by_id(pool, alert_id)
+
+    await notification_repository.create_notification(
+        pool,
+        user_id=row["userId"],
+        title=f"Your risk alert was {alert_status.lower()}",
+        message=(
+            "This incident has been reviewed and resolved."
+            if alert_status == "RESOLVED"
+            else "This incident has been escalated for further review."
+        ),
+        notification_type=f"RISK_ALERT_{alert_status}",
+        related_entity_type="RiskAlert",
+        related_entity_id=alert_id,
+    )
+
     appeal = await _resolve_linked_appeal(pool, row)
     return await _to_admin_out(pool, row, appeal)
 
