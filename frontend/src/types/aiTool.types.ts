@@ -16,6 +16,7 @@ export interface AiTool {
   createdAt: string;
   updatedAt: string;
   overallScore: number | null;
+  earliestSlaDeadline: string | null;
 }
 
 export interface AiToolCreateInput {

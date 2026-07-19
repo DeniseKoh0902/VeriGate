@@ -203,7 +203,7 @@ export function MyComplianceOverviewPage() {
   const standing = overview ? standingDisplay[overview.standing] : null;
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">My Compliance Overview</h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -218,7 +218,7 @@ export function MyComplianceOverviewPage() {
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Flags</p>
           <p className="mt-2 text-2xl font-bold text-slate-900">{overview?.totalFlags ?? '—'}</p>

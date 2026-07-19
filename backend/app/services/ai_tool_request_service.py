@@ -28,6 +28,7 @@ async def create_request(payload: AiToolRequestCreate, user_id: str) -> AiToolRe
         tool_name=payload.toolName,
         business_reason=payload.businessReason,
         department=requester["department"] if requester else "Unknown",
+        data_categories=list(payload.dataCategories),
     )
 
     await audit_log_repository.create_audit_log(
