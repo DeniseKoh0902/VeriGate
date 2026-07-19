@@ -45,3 +45,9 @@ export interface ChatSession {
   lastMessageAt: string;
   createdAt: string;
 }
+
+export interface AvailableModel {
+  name: string;
+  trustScore: number | null;
+  recommended: boolean;
+}

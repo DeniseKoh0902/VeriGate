@@ -7,7 +7,12 @@ from google.genai import errors, types
 
 from app.core.gemini_client import get_gemini_client
 from app.db.pool import get_pool
-from app.repositories import ai_tool_repository, ai_trust_evaluation_repository, audit_log_repository
+from app.repositories import (
+    ai_tool_repository,
+    ai_tool_request_repository,
+    ai_trust_evaluation_repository,
+    audit_log_repository,
+)
 from app.schemas.ai_tool import (
     AiToolCreate,
     AiToolOut,
@@ -16,6 +21,7 @@ from app.schemas.ai_tool import (
     AiTrustEvaluationOut,
     AiTrustEvaluationProposal,
 )
+from app.services.ai_tool_decision_notifier import notify_tool_decision
 
 logger = logging.getLogger(__name__)
 
@@ -23,31 +29,45 @@ _EVAL_MODEL = "gemini-flash-lite-latest"
 _EVAL_SYSTEM_INSTRUCTION = (
     "You are an AI governance risk evaluator inside VeriGate, an enterprise AI "
     "governance gateway. Given information about a third-party AI tool, assess it "
-    "on six criteria and return integer scores from 0 (fails the criterion badly) "
-    "to 100 (fully satisfies it): security, privacy, compliance, availability, "
-    "explainability, and organizational policy fit. Base the assessment on what is "
-    "realistically known about the named vendor/product and general AI governance "
-    "best practice; if information is limited, score conservatively and say so in "
-    "the justification. Keep the justification to 2-3 sentences."
+    "on six criteria: security, privacy, compliance, availability, explainability, "
+    "and organizational policy fit. For EACH criterion return an integer score from "
+    "0 (fails the criterion badly) to 100 (fully satisfies it) AND a one-sentence "
+    "reason specific to that criterion explaining the score. Base the assessment on "
+    "what is realistically known about the named vendor/product and general AI "
+    "governance best practice; if information is limited, score conservatively and "
+    "say so in the reason. Also provide a 2-3 sentence overall justification "
+    "summarizing the assessment across all six criteria."
 )
 _EVAL_SCHEMA = types.Schema(
     type="OBJECT",
     properties={
         "securityScore": types.Schema(type="INTEGER"),
+        "securityReason": types.Schema(type="STRING"),
         "privacyScore": types.Schema(type="INTEGER"),
+        "privacyReason": types.Schema(type="STRING"),
         "complianceScore": types.Schema(type="INTEGER"),
+        "complianceReason": types.Schema(type="STRING"),
         "availabilityScore": types.Schema(type="INTEGER"),
+        "availabilityReason": types.Schema(type="STRING"),
         "explainabilityScore": types.Schema(type="INTEGER"),
+        "explainabilityReason": types.Schema(type="STRING"),
         "orgPolicyScore": types.Schema(type="INTEGER"),
+        "orgPolicyReason": types.Schema(type="STRING"),
         "justification": types.Schema(type="STRING"),
     },
     required=[
         "securityScore",
+        "securityReason",
         "privacyScore",
+        "privacyReason",
         "complianceScore",
+        "complianceReason",
         "availabilityScore",
+        "availabilityReason",
         "explainabilityScore",
+        "explainabilityReason",
         "orgPolicyScore",
+        "orgPolicyReason",
         "justification",
     ],
 )
@@ -216,23 +236,35 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
 
     return AiTrustEvaluationProposal(
         securityScore=data["securityScore"],
+        securityReason=data["securityReason"],
         privacyScore=data["privacyScore"],
+        privacyReason=data["privacyReason"],
         complianceScore=data["complianceScore"],
+        complianceReason=data["complianceReason"],
         availabilityScore=data["availabilityScore"],
+        availabilityReason=data["availabilityReason"],
         explainabilityScore=data["explainabilityScore"],
+        explainabilityReason=data["explainabilityReason"],
         orgPolicyScore=data["orgPolicyScore"],
+        orgPolicyReason=data["orgPolicyReason"],
         overallScore=_overall_score(scores),
         justification=data["justification"],
     )
 
 
-async def approve_trust_evaluation(
+async def resolve_trust_evaluation(
     tool_id: str, payload: AiTrustEvaluationCreate, reviewer_id: str
 ) -> AiTrustEvaluationOut:
     pool = get_pool()
     tool = await ai_tool_repository.get_ai_tool(pool, tool_id)
     if tool is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI tool not found.")
+
+    if payload.decision == "REJECTED" and not payload.rejectionReason:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A rejection reason is required when rejecting an evaluation.",
+        )
 
     scores = [
         payload.securityScore,
@@ -248,30 +280,59 @@ async def approve_trust_evaluation(
         pool,
         ai_tool_id=tool_id,
         security_score=payload.securityScore,
+        security_reason=payload.securityReason,
         privacy_score=payload.privacyScore,
+        privacy_reason=payload.privacyReason,
         compliance_score=payload.complianceScore,
+        compliance_reason=payload.complianceReason,
         availability_score=payload.availabilityScore,
+        availability_reason=payload.availabilityReason,
         explainability_score=payload.explainabilityScore,
+        explainability_reason=payload.explainabilityReason,
         org_policy_score=payload.orgPolicyScore,
+        org_policy_reason=payload.orgPolicyReason,
         overall_score=overall_score,
+        justification=payload.justification,
         evaluated_by_id=reviewer_id,
     )
 
+    is_approved = payload.decision == "APPROVED"
     await ai_tool_repository.update_ai_tool(
         pool,
         tool_id,
-        risk_tier="APPROVED",
-        is_approved=True,
-        approved_by_id=reviewer_id,
+        risk_tier="APPROVED" if is_approved else "BLOCKED",
+        is_approved=is_approved,
+        approved_by_id=reviewer_id if is_approved else None,
+        decision_notes=payload.rejectionReason if not is_approved else None,
     )
 
     await audit_log_repository.create_audit_log(
         pool,
         user_id=reviewer_id,
-        action="AI Trust Evaluation Recorded",
+        action=f"AI Trust Evaluation {payload.decision.title()}",
         entity_type="AiTool",
         entity_id=tool_id,
     )
+
+    # Resolve every AI Tool Request pending for this tool name with the same
+    # decision, and notify each requester — not just whoever prompted this
+    # particular evaluation, since several employees may have requested the
+    # same tool independently.
+    pending_requests = await ai_tool_request_repository.list_pending_requests_by_tool_name(
+        pool, tool["name"]
+    )
+    for request_row in pending_requests:
+        resolved = await ai_tool_request_repository.resolve_request(
+            pool,
+            request_row["id"],
+            request_status=payload.decision,
+            reviewed_by_id=reviewer_id,
+            approved_tool_id=tool_id if is_approved else None,
+            rejection_reason=payload.rejectionReason if not is_approved else None,
+        )
+        await notify_tool_decision(
+            pool, request_row=resolved, decision=payload.decision, reason=payload.rejectionReason
+        )
 
     return AiTrustEvaluationOut(**dict(eval_row))
 

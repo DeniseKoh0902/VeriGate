@@ -15,16 +15,8 @@ import { Badge } from '@/components/ui/Badge';
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage';
 import { useToast } from '@/context/ToastContext';
 import * as promptService from '@/services/prompt.service';
-import { ModelSelector, type AiModelOption } from './ModelSelector';
-import type { ChatSession, PromptSubmitResult, RiskLevel } from '@/types/prompt.types';
-
-const models: AiModelOption[] = [
-  { name: 'GPT-4 Turbo', trustScore: 98, recommended: true },
-  { name: 'Claude 3 Opus', trustScore: 96 },
-  { name: 'Gemini Pro', trustScore: 89 },
-  { name: 'Mistral Large', trustScore: 91 },
-  { name: 'Llama 3 (Local)', trustScore: 74 },
-];
+import { ModelSelector } from './ModelSelector';
+import type { AvailableModel, ChatSession, PromptSubmitResult, RiskLevel } from '@/types/prompt.types';
 
 const riskLevelBadge: Record<RiskLevel, 'good' | 'warning' | 'serious' | 'critical'> = {
   LOW: 'good',
@@ -43,7 +35,9 @@ interface Turn {
 
 export function AiWorkspacePage() {
   const toast = useToast();
-  const [selectedModel, setSelectedModel] = useState(models[0].name);
+  const [models, setModels] = useState<AvailableModel[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(true);
+  const [selectedModel, setSelectedModel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,6 +59,14 @@ export function AiWorkspacePage() {
 
   useEffect(() => {
     loadSessions();
+    promptService
+      .getAvailableModels()
+      .then((result) => {
+        setModels(result);
+        setSelectedModel((current) => current || result[0]?.name || '');
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Unable to load AI models.'))
+      .finally(() => setIsLoadingModels(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -105,7 +107,7 @@ export function AiWorkspacePage() {
   };
 
   const handleSubmit = async () => {
-    if (!prompt.trim() || isSubmitting) return;
+    if (!prompt.trim() || isSubmitting || !selectedModel) return;
     const id = crypto.randomUUID();
     const userPrompt = prompt;
     setTurns((prev) => [
@@ -361,13 +363,27 @@ export function AiWorkspacePage() {
                   handleSubmit();
                 }
               }}
-              placeholder={`Message ${selectedModel}…`}
+              placeholder={
+                selectedModel ? `Message ${selectedModel}…` : 'Waiting for an approved AI model…'
+              }
               rows={2}
-              className="w-full resize-none rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+              disabled={!selectedModel}
+              className="w-full resize-none rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-50 disabled:text-slate-400"
             />
             <div className="mt-2 flex items-center justify-between">
-              <ModelSelector models={models} selected={selectedModel} onSelect={setSelectedModel} />
-              <Button className="w-auto" onClick={handleSubmit} isLoading={isSubmitting}>
+              {!isLoadingModels && models.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  No AI tools are approved yet — ask an admin to approve one in AI Tool Management.
+                </p>
+              ) : (
+                <ModelSelector models={models} selected={selectedModel} onSelect={setSelectedModel} />
+              )}
+              <Button
+                className="w-auto"
+                onClick={handleSubmit}
+                isLoading={isSubmitting}
+                disabled={!selectedModel}
+              >
                 Submit Prompt
                 <SendHorizontal size={15} />
               </Button>

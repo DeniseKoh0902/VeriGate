@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.schemas.common import UtcDatetime
 
 AiToolRiskTier = Literal["APPROVED", "RESTRICTED", "BLOCKED"]
+TrustEvaluationDecision = Literal["APPROVED", "REJECTED"]
 
 
 class AiToolCreate(BaseModel):
@@ -35,6 +36,7 @@ class AiToolOut(BaseModel):
     isApproved: bool
     approvedById: str | None
     approvedAt: UtcDatetime | None
+    decisionNotes: str | None
     createdAt: UtcDatetime
     updatedAt: UtcDatetime
     overallScore: int | None
@@ -42,20 +44,37 @@ class AiToolOut(BaseModel):
 
 class AiTrustEvaluationCreate(BaseModel):
     securityScore: int
+    securityReason: str
     privacyScore: int
+    privacyReason: str
     complianceScore: int
+    complianceReason: str
     availabilityScore: int
+    availabilityReason: str
     explainabilityScore: int
+    explainabilityReason: str
     orgPolicyScore: int
+    orgPolicyReason: str
+    justification: str
+    decision: TrustEvaluationDecision = "APPROVED"
+    # Required when decision is REJECTED — surfaced to the tool's requester(s)
+    # and reused to auto-resolve any future duplicate request for this tool.
+    rejectionReason: str | None = None
 
 
 class AiTrustEvaluationProposal(BaseModel):
     securityScore: int
+    securityReason: str
     privacyScore: int
+    privacyReason: str
     complianceScore: int
+    complianceReason: str
     availabilityScore: int
+    availabilityReason: str
     explainabilityScore: int
+    explainabilityReason: str
     orgPolicyScore: int
+    orgPolicyReason: str
     overallScore: int
     justification: str
 
@@ -64,11 +83,18 @@ class AiTrustEvaluationOut(BaseModel):
     id: str
     aiToolId: str
     securityScore: int
+    securityReason: str | None
     privacyScore: int
+    privacyReason: str | None
     complianceScore: int
+    complianceReason: str | None
     availabilityScore: int
+    availabilityReason: str | None
     explainabilityScore: int
+    explainabilityReason: str | None
     orgPolicyScore: int
+    orgPolicyReason: str | None
     overallScore: int
+    justification: str | None
     evaluatedById: str
     evaluatedAt: UtcDatetime

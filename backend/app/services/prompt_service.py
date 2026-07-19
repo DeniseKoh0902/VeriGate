@@ -15,6 +15,7 @@ from app.repositories import (
     sensitive_data_rule_repository,
 )
 from app.schemas.prompt import (
+    AvailableModelOut,
     ChatSessionOut,
     PromptHistoryItem,
     PromptSubmitRequest,
@@ -50,10 +51,28 @@ async def generate_ai_response(prompt_text: str) -> str:
         return "Unable to reach the AI model right now. Please try again."
 
 
+async def list_available_models() -> list[AvailableModelOut]:
+    pool = get_pool()
+    rows = await ai_tool_repository.list_approved_tools(pool)
+    return [
+        AvailableModelOut(name=row["name"], trustScore=row["overallScore"], recommended=index == 0)
+        for index, row in enumerate(rows)
+    ]
+
+
 async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSubmitResponse:
     pool = get_pool()
 
     ai_tool = await ai_tool_repository.get_or_create_ai_tool_by_name(pool, payload.aiToolName)
+
+    if ai_tool["riskTier"] != "APPROVED":
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail=(
+                f'"{payload.aiToolName}" is not an approved AI tool. '
+                "Submit an AI Tool Request to get it reviewed."
+            ),
+        )
 
     if payload.sessionId:
         session = await prompt_repository.get_session(pool, payload.sessionId, user_id)

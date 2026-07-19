@@ -16,6 +16,45 @@ async def get_request_by_id(pool: asyncpg.Pool, request_id: str) -> asyncpg.Reco
         return await conn.fetchrow('SELECT * FROM "ai_tool_requests" WHERE "id" = $1', request_id)
 
 
+async def list_pending_requests_by_tool_name(
+    pool: asyncpg.Pool, tool_name: str
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            'SELECT * FROM "ai_tool_requests" WHERE "toolName" = $1 AND "status" = \'PENDING\'',
+            tool_name,
+        )
+
+
+async def resolve_request(
+    pool: asyncpg.Pool,
+    request_id: str,
+    *,
+    request_status: str,
+    reviewed_by_id: str,
+    approved_tool_id: str | None = None,
+    rejection_reason: str | None = None,
+) -> asyncpg.Record:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            UPDATE "ai_tool_requests" SET
+                "status" = $2::"RequestStatus",
+                "approvedToolId" = $3,
+                "rejectionReason" = $4,
+                "reviewedById" = $5,
+                "reviewedAt" = CURRENT_TIMESTAMP
+            WHERE "id" = $1
+            RETURNING *
+            """,
+            request_id,
+            request_status,
+            approved_tool_id,
+            rejection_reason,
+            reviewed_by_id,
+        )
+
+
 async def create_request(
     pool: asyncpg.Pool,
     *,

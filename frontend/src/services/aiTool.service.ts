@@ -5,7 +5,7 @@ import type {
   AiToolUpdateInput,
   AiTrustEvaluation,
   AiTrustEvaluationProposal,
-  TrustEvaluationScores,
+  AiTrustEvaluationSubmit,
 } from '@/types/aiTool.types';
 
 export function listAiTools() {
@@ -30,10 +30,10 @@ export function proposeTrustEvaluation(toolId: string) {
   });
 }
 
-export function approveTrustEvaluation(toolId: string, scores: TrustEvaluationScores) {
+export function resolveTrustEvaluation(toolId: string, submission: AiTrustEvaluationSubmit) {
   return apiFetch<AiTrustEvaluation>(`/ai-tools/${toolId}/trust-evaluations`, {
     method: 'POST',
-    body: JSON.stringify(scores),
+    body: JSON.stringify(submission),
   });
 }
 
