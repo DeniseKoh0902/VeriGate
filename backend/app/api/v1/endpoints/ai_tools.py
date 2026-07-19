@@ -8,9 +8,11 @@ from app.schemas.ai_tool import (
     AiTrustEvaluationCreate,
     AiTrustEvaluationOut,
     AiTrustEvaluationProposal,
+    AiTrustEvaluationUpdate,
 )
+from app.schemas.bias_drift import AiToolUsageScanOut
 from app.schemas.user import UserOut
-from app.services import ai_tool_service
+from app.services import ai_tool_service, bias_drift_service
 
 router = APIRouter(
     prefix="/ai-tools",
@@ -68,3 +70,33 @@ async def resolve_trust_evaluation(
 @router.get("/{tool_id}/trust-evaluations/latest", response_model=AiTrustEvaluationOut | None)
 async def get_latest_trust_evaluation(tool_id: str) -> AiTrustEvaluationOut | None:
     return await ai_tool_service.get_latest_trust_evaluation(tool_id)
+
+
+@router.patch("/{tool_id}/trust-evaluations/latest", response_model=AiTrustEvaluationOut)
+async def update_trust_evaluation(
+    tool_id: str,
+    payload: AiTrustEvaluationUpdate,
+    current_user: UserOut = Depends(_require_admin),
+) -> AiTrustEvaluationOut:
+    return await ai_tool_service.update_trust_evaluation(tool_id, payload, current_user.id)
+
+
+# The block-rate/sensitive-data-rate scan (bias_drift_service.run_scan) has
+# no manual trigger anymore — it only runs on the weekly cron job in
+# main.py. This endpoint is what "Re-evaluate All" in AI Tool Management
+# calls instead: it re-scores every approved tool's trust score from real
+# usage evidence, which is the thing an admin actually wants to trigger
+# on demand.
+#
+# Static "/reevaluate-all" is registered ahead of any "/{tool_id}/..." usage
+# so the literal path segment can never be shadowed by the dynamic one.
+@router.post("/reevaluate-all", response_model=list[AiTrustEvaluationOut])
+async def reevaluate_all_approved_tools(
+    current_user: UserOut = Depends(_require_admin),
+) -> list[AiTrustEvaluationOut]:
+    return await bias_drift_service.reevaluate_all_approved_tools(current_user.id)
+
+
+@router.get("/{tool_id}/usage-scans", response_model=list[AiToolUsageScanOut])
+async def get_usage_scans(tool_id: str) -> list[AiToolUsageScanOut]:
+    return await bias_drift_service.list_scans_for_tool(tool_id)

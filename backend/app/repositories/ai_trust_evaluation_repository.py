@@ -68,3 +68,75 @@ async def get_latest_trust_evaluation(
             """,
             ai_tool_id,
         )
+
+
+async def update_trust_evaluation(
+    pool: asyncpg.Pool,
+    evaluation_id: str,
+    *,
+    security_score: int,
+    security_reason: str,
+    privacy_score: int,
+    privacy_reason: str,
+    compliance_score: int,
+    compliance_reason: str,
+    availability_score: int,
+    availability_reason: str,
+    explainability_score: int,
+    explainability_reason: str,
+    org_policy_score: int,
+    org_policy_reason: str,
+    overall_score: int,
+    justification: str,
+) -> asyncpg.Record | None:
+    """Edits an existing evaluation row in place — no new row, no
+    evaluatedById/evaluatedAt change, since nothing was re-decided."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            UPDATE "ai_trust_evaluations" SET
+                "securityScore" = $2, "securityReason" = $3,
+                "privacyScore" = $4, "privacyReason" = $5,
+                "complianceScore" = $6, "complianceReason" = $7,
+                "availabilityScore" = $8, "availabilityReason" = $9,
+                "explainabilityScore" = $10, "explainabilityReason" = $11,
+                "orgPolicyScore" = $12, "orgPolicyReason" = $13,
+                "overallScore" = $14, "justification" = $15
+            WHERE "id" = $1
+            RETURNING *
+            """,
+            evaluation_id,
+            security_score,
+            security_reason,
+            privacy_score,
+            privacy_reason,
+            compliance_score,
+            compliance_reason,
+            availability_score,
+            availability_reason,
+            explainability_score,
+            explainability_reason,
+            org_policy_score,
+            org_policy_reason,
+            overall_score,
+            justification,
+        )
+
+
+async def list_recent_trust_evaluations(
+    pool: asyncpg.Pool, ai_tool_id: str, limit: int = 2
+) -> list[asyncpg.Record]:
+    """Most recent evaluations first — used to compare the current trust
+    score against what it was before, e.g. to catch a score that regressed
+    below the approval threshold."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT * FROM "ai_trust_evaluations"
+            WHERE "aiToolId" = $1
+            ORDER BY "evaluatedAt" DESC
+            LIMIT $2
+            """,
+            ai_tool_id,
+            limit,
+        )

@@ -6,6 +6,7 @@ import type {
   AiTrustEvaluation,
   AiTrustEvaluationProposal,
   AiTrustEvaluationSubmit,
+  AiTrustEvaluationUpdateInput,
 } from '@/types/aiTool.types';
 
 export function listAiTools() {
@@ -39,4 +40,11 @@ export function resolveTrustEvaluation(toolId: string, submission: AiTrustEvalua
 
 export function getLatestTrustEvaluation(toolId: string) {
   return apiFetch<AiTrustEvaluation | null>(`/ai-tools/${toolId}/trust-evaluations/latest`);
+}
+
+export function updateTrustEvaluation(toolId: string, input: AiTrustEvaluationUpdateInput) {
+  return apiFetch<AiTrustEvaluation>(`/ai-tools/${toolId}/trust-evaluations/latest`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
 }

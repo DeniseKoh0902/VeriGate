@@ -63,6 +63,26 @@ class AiTrustEvaluationCreate(BaseModel):
     rejectionReason: str | None = None
 
 
+class AiTrustEvaluationUpdate(BaseModel):
+    """Edits the tool's existing latest evaluation in place — scores, reasons,
+    and justification only. No decision, no new evaluation record, no
+    notification to anyone; that's what Approve/Reject are for."""
+
+    securityScore: int
+    securityReason: str
+    privacyScore: int
+    privacyReason: str
+    complianceScore: int
+    complianceReason: str
+    availabilityScore: int
+    availabilityReason: str
+    explainabilityScore: int
+    explainabilityReason: str
+    orgPolicyScore: int
+    orgPolicyReason: str
+    justification: str
+
+
 class AiTrustEvaluationProposal(BaseModel):
     securityScore: int
     securityReason: str

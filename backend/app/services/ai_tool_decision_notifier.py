@@ -87,6 +87,85 @@ async def notify_tool_access_revoked(
         logger.error("Failed to send access-revoked email to %s", user["email"])
 
 
+async def notify_governance_drift_flagged(
+    pool: asyncpg.Pool,
+    *,
+    scan_id: str,
+    tool_name: str,
+    block_rate: float,
+    sensitive_data_match_rate: float,
+) -> None:
+    """Notifies (in-app + email) every ADMIN/COMPLIANCE user that a usage
+    scan found this tool's real block/sensitive-data rate has drifted —
+    triggered by the numbers in AiToolUsageScan, not by an LLM's opinion."""
+    reviewers = await user_repository.list_governance_users(pool)
+    title = f'Usage drift flagged: "{tool_name}"'
+    message = (
+        f'"{tool_name}" is blocking {block_rate:.0%} of prompts and flagging '
+        f'{sensitive_data_match_rate:.0%} for sensitive data over the last 7 days — '
+        "high enough to warrant review."
+    )
+
+    for reviewer in reviewers:
+        await notification_repository.create_notification(
+            pool,
+            user_id=reviewer["id"],
+            title=title,
+            message=message,
+            notification_type="AI_TOOL_USAGE_DRIFT_FLAGGED",
+            related_entity_type="AiToolUsageScan",
+            related_entity_id=scan_id,
+        )
+        try:
+            await send_email(
+                to=reviewer["email"],
+                subject=title,
+                html_body=f"<p>Hi {reviewer['name']},</p><p>{message}</p>",
+            )
+        except Exception:
+            logger.error("Failed to send drift-flagged email to %s", reviewer["email"])
+
+
+async def notify_governance_trust_score_regressed(
+    pool: asyncpg.Pool,
+    *,
+    tool_id: str,
+    tool_name: str,
+    current_score: int,
+    previous_score: int,
+    threshold: int,
+) -> None:
+    """Notifies (in-app + email) every ADMIN/COMPLIANCE user that a tool's
+    trust score dropped below its previous evaluation AND below the
+    approval threshold — a regression, not just a low score that's always
+    been low."""
+    reviewers = await user_repository.list_governance_users(pool)
+    title = f'Trust score regression: "{tool_name}"'
+    message = (
+        f'"{tool_name}" fell from {previous_score} to {current_score}, below the '
+        f"{threshold} approval threshold. Review recommended."
+    )
+
+    for reviewer in reviewers:
+        await notification_repository.create_notification(
+            pool,
+            user_id=reviewer["id"],
+            title=title,
+            message=message,
+            notification_type="AI_TOOL_TRUST_SCORE_REGRESSED",
+            related_entity_type="AiTool",
+            related_entity_id=tool_id,
+        )
+        try:
+            await send_email(
+                to=reviewer["email"],
+                subject=title,
+                html_body=f"<p>Hi {reviewer['name']},</p><p>{message}</p>",
+            )
+        except Exception:
+            logger.error("Failed to send trust-score-regression email to %s", reviewer["email"])
+
+
 async def notify_governance_new_tool_request(
     pool: asyncpg.Pool,
     *,

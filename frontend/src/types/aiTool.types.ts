@@ -62,6 +62,10 @@ export interface AiTrustEvaluationSubmit extends TrustEvaluationScores {
   rejectionReason?: string | null;
 }
 
+export interface AiTrustEvaluationUpdateInput extends TrustEvaluationScores {
+  justification: string;
+}
+
 export interface AiTrustEvaluation {
   id: string;
   aiToolId: string;
