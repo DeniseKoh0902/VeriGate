@@ -236,7 +236,15 @@ export function AppealQueuePage() {
                   filter === value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100',
                 )}
               >
-                {value === 'All' ? 'All' : statusLabel[value]} ({sectionCounts[value]})
+                {value === 'All' ? 'All' : statusLabel[value]} (
+                <span
+                  className={cn(
+                    value === 'OVERDUE' && sectionCounts[value] > 0 && 'text-red-600'
+                  )}
+                >
+                  {sectionCounts[value]}
+                </span>
+                )
               </button>
             ))}
           </div>
