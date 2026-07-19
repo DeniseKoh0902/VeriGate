@@ -241,7 +241,7 @@ export function AiPolicyRecommendationPage() {
                       </>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {rec.department && <Badge status="neutral">{rec.department}</Badge>}
+                      <Badge status="neutral">{rec.department ?? 'All Departments'}</Badge>
                       <span className="text-xs text-slate-400">
                         {rec.confidenceScore}% confidence
                       </span>

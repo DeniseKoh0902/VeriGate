@@ -14,7 +14,7 @@ from app.services import appeal_service
 
 router = APIRouter(prefix="/appeals", tags=["appeals"])
 
-_require_governance = require_roles("ADMIN", "COMPLIANCE")
+_require_admin = require_roles("ADMIN")
 
 
 # Static "/mine" is registered ahead of any future "/{appeal_id}" routes so a
@@ -26,7 +26,7 @@ async def get_my_appeals(current_user: UserOut = Depends(get_current_user)) -> l
 
 @router.get("", response_model=list[AppealAdminOut])
 async def get_all_appeals(
-    current_user: UserOut = Depends(_require_governance),
+    current_user: UserOut = Depends(_require_admin),
 ) -> list[AppealAdminOut]:
     return await appeal_service.list_all_appeals()
 
@@ -42,7 +42,7 @@ async def create_appeal(
 async def resolve_appeal(
     appeal_id: str,
     payload: AppealResolveRequest,
-    current_user: UserOut = Depends(_require_governance),
+    current_user: UserOut = Depends(_require_admin),
 ) -> AppealAdminOut:
     return await appeal_service.resolve_appeal(appeal_id, payload, current_user.id)
 
@@ -51,7 +51,7 @@ async def resolve_appeal(
 async def request_more_info(
     appeal_id: str,
     payload: AppealRequestInfoRequest,
-    current_user: UserOut = Depends(_require_governance),
+    current_user: UserOut = Depends(_require_admin),
 ) -> AppealAdminOut:
     return await appeal_service.request_more_info(appeal_id, payload, current_user.id)
 

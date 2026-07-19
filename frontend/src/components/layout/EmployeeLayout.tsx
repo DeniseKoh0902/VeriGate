@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Bot, FilePlus2, UserCheck, LogOut } from 'lucide-react';
+import { Bot, FilePlus2, UserCheck, ShieldCheck, LogOut } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Footer } from '@/components/common/Footer';
 import { TopHeader } from '@/components/layout/TopHeader';
@@ -9,6 +9,7 @@ const navItems = [
   { label: 'AI Workspace', path: '/workspace', icon: Bot },
   { label: 'AI Tool Request', path: '/workspace/tool-request', icon: FilePlus2 },
   { label: 'My Compliance Overview', path: '/workspace/compliance-overview', icon: UserCheck },
+  { label: 'My Policies', path: '/workspace/policies', icon: ShieldCheck },
 ];
 
 export function EmployeeLayout() {

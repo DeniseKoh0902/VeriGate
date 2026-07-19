@@ -16,7 +16,12 @@ import { AppealQueuePage } from '@/pages/appealQueue';
 import { AuditLogsPage } from '@/pages/auditLogs';
 import { AiPolicyRecommendationPage } from '@/pages/aiPolicyRecommendation';
 import { GovernanceCopilotPage } from '@/pages/governanceCopilot';
-import { AiWorkspacePage, AiToolRequestPage, MyComplianceOverviewPage } from '@/pages/workspace';
+import {
+  AiWorkspacePage,
+  AiToolRequestPage,
+  MyComplianceOverviewPage,
+  MyPoliciesPage,
+} from '@/pages/workspace';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { EmployeeLayout } from '@/components/layout/EmployeeLayout';
 import { ProtectedRoute } from '@/routes/ProtectedRoute';
@@ -34,7 +39,7 @@ export function AppRoutes() {
       <Route path="/support" element={<SupportPage />} />
       <Route path="/contact-it" element={<ContactItPage />} />
 
-      <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'COMPLIANCE']} />}>
+      <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
         <Route element={<AdminLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/ai-tool-management" element={<AiToolManagementPage />} />
@@ -53,6 +58,7 @@ export function AppRoutes() {
           <Route path="/workspace" element={<AiWorkspacePage />} />
           <Route path="/workspace/tool-request" element={<AiToolRequestPage />} />
           <Route path="/workspace/compliance-overview" element={<MyComplianceOverviewPage />} />
+          <Route path="/workspace/policies" element={<MyPoliciesPage />} />
         </Route>
       </Route>
     </Routes>

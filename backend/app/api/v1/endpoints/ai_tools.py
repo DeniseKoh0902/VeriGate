@@ -15,10 +15,10 @@ from app.services import ai_tool_service
 router = APIRouter(
     prefix="/ai-tools",
     tags=["ai-tools"],
-    dependencies=[Depends(require_roles("ADMIN", "COMPLIANCE"))],
+    dependencies=[Depends(require_roles("ADMIN"))],
 )
 
-_require_governance = require_roles("ADMIN", "COMPLIANCE")
+_require_admin = require_roles("ADMIN")
 
 
 @router.get("", response_model=list[AiToolOut])
@@ -28,21 +28,21 @@ async def get_ai_tools() -> list[AiToolOut]:
 
 @router.post("", response_model=AiToolOut, status_code=status.HTTP_201_CREATED)
 async def create_ai_tool(
-    payload: AiToolCreate, current_user: UserOut = Depends(_require_governance)
+    payload: AiToolCreate, current_user: UserOut = Depends(_require_admin)
 ) -> AiToolOut:
     return await ai_tool_service.create_ai_tool(payload, current_user.id)
 
 
 @router.patch("/{tool_id}", response_model=AiToolOut)
 async def update_ai_tool(
-    tool_id: str, payload: AiToolUpdate, current_user: UserOut = Depends(_require_governance)
+    tool_id: str, payload: AiToolUpdate, current_user: UserOut = Depends(_require_admin)
 ) -> AiToolOut:
     return await ai_tool_service.update_ai_tool(tool_id, payload, current_user.id)
 
 
 @router.delete("/{tool_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_ai_tool(
-    tool_id: str, current_user: UserOut = Depends(_require_governance)
+    tool_id: str, current_user: UserOut = Depends(_require_admin)
 ) -> None:
     await ai_tool_service.delete_ai_tool(tool_id, current_user.id)
 
@@ -60,7 +60,7 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
 async def resolve_trust_evaluation(
     tool_id: str,
     payload: AiTrustEvaluationCreate,
-    current_user: UserOut = Depends(_require_governance),
+    current_user: UserOut = Depends(_require_admin),
 ) -> AiTrustEvaluationOut:
     return await ai_tool_service.resolve_trust_evaluation(tool_id, payload, current_user.id)
 

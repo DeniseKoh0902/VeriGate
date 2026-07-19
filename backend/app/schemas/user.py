@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr
 from app.schemas.common import UtcDatetime
 from app.schemas.password import PasswordStr
 
-Role = Literal["ADMIN", "COMPLIANCE", "EMPLOYEE"]
+Role = Literal["ADMIN", "EMPLOYEE"]
 
 
 class UserCreate(BaseModel):

@@ -7,7 +7,7 @@ from app.services import audit_log_service
 router = APIRouter(
     prefix="/audit-logs",
     tags=["audit-logs"],
-    dependencies=[Depends(require_roles("ADMIN", "COMPLIANCE"))],
+    dependencies=[Depends(require_roles("ADMIN"))],
 )
 
 

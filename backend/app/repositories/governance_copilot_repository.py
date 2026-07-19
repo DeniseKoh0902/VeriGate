@@ -6,13 +6,21 @@ import asyncpg
 
 
 async def list_policies(pool: asyncpg.Pool, *, department: str | None) -> list[asyncpg.Record]:
+    # "Org-wide" has two representations in this column: Policy Management's
+    # form stores the literal string "All Departments" (not SQL NULL), and
+    # older rows predating that convention may still hold true NULL — both
+    # are matched here so an org-wide policy always surfaces regardless of
+    # which department the copilot is asked about.
     async with pool.acquire() as conn:
         return await conn.fetch(
             """
             SELECT "id", "name", "description", "severity", "appliesToDepartment"
             FROM "policies"
             WHERE "isActive" = true
-              AND ($1::text IS NULL OR "appliesToDepartment" = $1 OR "appliesToDepartment" IS NULL)
+              AND ($1::text IS NULL
+                   OR "appliesToDepartment" = $1
+                   OR "appliesToDepartment" = 'All Departments'
+                   OR "appliesToDepartment" IS NULL)
             ORDER BY "createdAt" DESC
             """,
             department,

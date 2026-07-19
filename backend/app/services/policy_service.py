@@ -41,6 +41,18 @@ async def list_policies() -> list[PolicyOut]:
     return [PolicyOut(**dict(row)) for row in rows]
 
 
+async def list_policies_for_employee(department: str) -> list[PolicyOut]:
+    pool = get_pool()
+    rows = await policy_repository.list_active_policies_for_department(pool, department)
+    return [PolicyOut(**dict(row)) for row in rows]
+
+
+async def list_active_sensitive_data_rules() -> list[SensitiveDataRuleOut]:
+    pool = get_pool()
+    rows = await sensitive_data_rule_repository.list_active_rules(pool)
+    return [SensitiveDataRuleOut(**dict(row)) for row in rows]
+
+
 async def create_policy(payload: PolicyCreate, created_by_id: str) -> PolicyOut:
     pool = get_pool()
     row = await policy_repository.create_policy(
