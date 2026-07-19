@@ -178,7 +178,7 @@ function AuditLogDetailContent({ detail }: { detail: AuditLogDetail }) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+    <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
       {detail.justification && (
         <DetailField label="Employee Justification">
           <p className="whitespace-pre-wrap">{detail.justification}</p>
@@ -400,8 +400,8 @@ export function AuditLogsPage() {
   const pagedLogs = filtered.slice((currentPage - 1) * LOGS_PER_PAGE, currentPage * LOGS_PER_PAGE);
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-start justify-between">
+    <div className="p-4 sm:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Audit Logs</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -521,7 +521,8 @@ export function AuditLogsPage() {
         )}
 
         {filtered.length > 0 && (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="px-5 py-2 font-medium">Timestamp</th>
@@ -593,6 +594,7 @@ export function AuditLogsPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
 
         {totalPages > 1 && (

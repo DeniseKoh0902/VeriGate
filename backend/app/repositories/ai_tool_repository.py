@@ -3,7 +3,7 @@ import uuid
 import asyncpg
 
 _LIST_SELECT = """
-    SELECT t.*, e."overallScore"
+    SELECT t.*, e."overallScore", r."earliestSlaDeadline"
     FROM "ai_tools" t
     LEFT JOIN LATERAL (
         SELECT "overallScore" FROM "ai_trust_evaluations" ev
@@ -11,6 +11,13 @@ _LIST_SELECT = """
         ORDER BY ev."evaluatedAt" DESC
         LIMIT 1
     ) e ON true
+    LEFT JOIN LATERAL (
+        -- Matched by name, not FK — a pending request has no approvedToolId
+        -- yet. Surfaces how long the oldest waiting requester has been
+        -- waiting on this Pending Review tool.
+        SELECT MIN("slaDeadline") AS "earliestSlaDeadline" FROM "ai_tool_requests" req
+        WHERE req."toolName" = t."name" AND req."status" = 'PENDING'
+    ) r ON true
 """
 
 
@@ -60,12 +67,27 @@ async def create_pending_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> async
             name,
             "Unknown",
         )
-    return {**dict(row), "overallScore": None}
+    return {**dict(row), "overallScore": None, "earliestSlaDeadline": None}
 
 
 async def list_ai_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Overdue Pending Review tools first (most overdue first), then
+    Pending Review tools still within SLA (soonest due first), then
+    everything else newest-first — an overdue badge is useless if the row
+    it's on can still get buried three pages down."""
     async with pool.acquire() as conn:
-        return await conn.fetch(f'{_LIST_SELECT} ORDER BY t."createdAt" DESC')
+        return await conn.fetch(
+            f"""{_LIST_SELECT}
+            ORDER BY
+                CASE
+                    WHEN t."riskTier" = 'RESTRICTED' AND r."earliestSlaDeadline" < CURRENT_TIMESTAMP THEN 0
+                    WHEN t."riskTier" = 'RESTRICTED' AND r."earliestSlaDeadline" IS NOT NULL THEN 1
+                    ELSE 2
+                END,
+                r."earliestSlaDeadline" ASC NULLS LAST,
+                t."createdAt" DESC
+            """
+        )
 
 
 async def list_approved_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
@@ -111,7 +133,7 @@ async def create_ai_tool(
             description,
             risk_tier,
         )
-    return {**dict(row), "overallScore": None}
+    return {**dict(row), "overallScore": None, "earliestSlaDeadline": None}
 
 
 async def update_ai_tool(

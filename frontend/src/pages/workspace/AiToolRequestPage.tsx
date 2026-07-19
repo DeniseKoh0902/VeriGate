@@ -7,29 +7,48 @@ import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import * as aiToolRequestService from '@/services/aiToolRequest.service';
-import type {
-  AiToolRequest,
-  AiToolRequestCreateInput,
-  RequestStatus,
+import {
+  DATA_CATEGORIES,
+  type AiToolRequest,
+  type AiToolRequestCreateInput,
+  type DataCategory,
+  type RequestStatus,
 } from '@/types/aiToolRequest.types';
 
 const REQUESTS_PER_PAGE = 5;
 
-const statusBadge: Record<RequestStatus, 'good' | 'warning' | 'critical'> = {
+type DisplayStatus = RequestStatus | 'OVERDUE';
+
+const statusBadge: Record<DisplayStatus, 'good' | 'warning' | 'critical'> = {
   APPROVED: 'good',
   PENDING: 'warning',
   REJECTED: 'critical',
+  OVERDUE: 'critical',
 };
 
-const statusLabel: Record<RequestStatus, string> = {
+const statusLabel: Record<DisplayStatus, string> = {
   APPROVED: 'Approved',
   PENDING: 'Pending',
   REJECTED: 'Rejected',
+  OVERDUE: 'Overdue',
 };
+
+function getDisplayStatus(request: AiToolRequest): DisplayStatus {
+  if (request.status === 'PENDING' && request.slaDeadline && new Date(request.slaDeadline) < new Date()) {
+    return 'OVERDUE';
+  }
+  return request.status;
+}
+
+function formatDeadline(date: string | null) {
+  if (!date) return null;
+  return new Date(date).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
 
 const emptyForm: AiToolRequestCreateInput = {
   toolName: '',
   businessReason: '',
+  dataCategories: [],
 };
 
 export function AiToolRequestPage() {
@@ -58,7 +77,18 @@ export function AiToolRequestPage() {
     loadRequests();
   }, []);
 
-  const isFormValid = Boolean(form.toolName.trim() && form.businessReason.trim());
+  const isFormValid = Boolean(
+    form.toolName.trim() && form.businessReason.trim() && form.dataCategories.length > 0,
+  );
+
+  const toggleDataCategory = (category: DataCategory) => {
+    setForm((prev) => ({
+      ...prev,
+      dataCategories: prev.dataCategories.includes(category)
+        ? prev.dataCategories.filter((c) => c !== category)
+        : [...prev.dataCategories, category],
+    }));
+  };
 
   const totalPages = Math.max(1, Math.ceil(requests.length / REQUESTS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -86,7 +116,7 @@ export function AiToolRequestPage() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">AI Tool Request</h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -100,7 +130,7 @@ export function AiToolRequestPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 items-start gap-6">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
         <Card>
           <div className="border-b border-slate-300 px-5 py-4">
             <h2 className="font-semibold text-slate-900">
@@ -138,6 +168,28 @@ export function AiToolRequestPage() {
                 className="w-full resize-none rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
               />
             </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Data This Tool Will Touch
+              </label>
+              <p className="mb-2 text-xs text-slate-400">Select at least one — this shapes review.</p>
+              <div className="space-y-1.5">
+                {DATA_CATEGORIES.map((category) => (
+                  <label
+                    key={category}
+                    className="flex items-center gap-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.dataCategories.includes(category)}
+                      onChange={() => toggleDataCategory(category)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20"
+                    />
+                    {category}
+                  </label>
+                ))}
+              </div>
+            </div>
             <Button type="submit" isLoading={isSubmitting} disabled={!isFormValid}>
               Submit Request
             </Button>
@@ -145,7 +197,7 @@ export function AiToolRequestPage() {
           </div>
         </Card>
 
-        <Card className="col-span-2">
+        <Card className="lg:col-span-2">
           <div className="border-b border-slate-300 px-5 py-4">
             <h2 className="font-semibold text-slate-900">Your Requests</h2>
           </div>
@@ -155,21 +207,45 @@ export function AiToolRequestPage() {
                 You haven't submitted any AI tool requests yet.
               </p>
             )}
-            {pagedRequests.map((request) => (
-              <div key={request.id} className="px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{request.toolName}</p>
-                    <p className="text-xs text-slate-400">{request.department}</p>
+            {pagedRequests.map((request) => {
+              const displayStatus = getDisplayStatus(request);
+              const deadline = formatDeadline(request.slaDeadline);
+              return (
+                <div key={request.id} className="px-5 py-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{request.toolName}</p>
+                      <p className="text-xs text-slate-400">
+                        {request.department}
+                        {deadline && request.status === 'PENDING' && (
+                          <>
+                            {' '}
+                            · {displayStatus === 'OVERDUE' ? 'Was due' : 'Due'} {deadline}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <Badge status={statusBadge[displayStatus]}>{statusLabel[displayStatus]}</Badge>
                   </div>
-                  <Badge status={statusBadge[request.status]}>{statusLabel[request.status]}</Badge>
+                  <p className="mt-2 text-sm text-slate-500">{request.businessReason}</p>
+                  {request.dataCategories.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {request.dataCategories.map((category) => (
+                        <span
+                          key={category}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+                        >
+                          {category}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {request.status === 'REJECTED' && request.rejectionReason && (
+                    <p className="mt-2 text-xs text-red-600">Reason: {request.rejectionReason}</p>
+                  )}
                 </div>
-                <p className="mt-2 text-sm text-slate-500">{request.businessReason}</p>
-                {request.status === 'REJECTED' && request.rejectionReason && (
-                  <p className="mt-2 text-xs text-red-600">Reason: {request.rejectionReason}</p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {totalPages > 1 && (

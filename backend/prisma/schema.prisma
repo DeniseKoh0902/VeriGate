@@ -326,6 +326,11 @@ model AiToolRequest {
   toolName        String
   businessReason  String
   department      String
+  // What categories of organizational data this tool will actually touch,
+  // declared by the requester at intake — not free text, so it can drive
+  // triage and feed the AI evaluation as real context instead of the
+  // evaluator having to guess from the tool name alone.
+  dataCategories  String[]      @default([])
   status          RequestStatus @default(PENDING)
   rejectionReason String?
   approvedToolId  String?
@@ -334,6 +339,9 @@ model AiToolRequest {
   reviewedBy      User?         @relation("RequestReviewedBy", fields: [reviewedById], references: [id])
   submittedAt     DateTime      @default(now())
   reviewedAt      DateTime?
+  // Set at intake so "days not months" is something the system holds
+  // itself to, not just an aspiration — mirrors Appeal.slaDeadline.
+  slaDeadline     DateTime?
 
   @@map("ai_tool_requests")
 }

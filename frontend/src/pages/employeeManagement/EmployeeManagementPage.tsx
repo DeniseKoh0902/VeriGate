@@ -170,8 +170,8 @@ export function EmployeeManagementPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-start justify-between">
+    <div className="p-4 sm:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Employee Management</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -236,7 +236,7 @@ export function EmployeeManagementPage() {
         </div>
 
         {form && (
-          <div className="grid grid-cols-6 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+          <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4 sm:grid-cols-2 lg:grid-cols-6">
             <Input
               placeholder="Full name"
               value={form.name}
@@ -297,7 +297,8 @@ export function EmployeeManagementPage() {
           </div>
         )}
 
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[680px] text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
               <th className="px-5 py-2 font-medium">Name</th>
@@ -358,6 +359,7 @@ export function EmployeeManagementPage() {
             ))}
           </tbody>
         </table>
+        </div>
 
         <Pagination
           currentPage={page}

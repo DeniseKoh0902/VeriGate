@@ -36,8 +36,12 @@ _EVAL_SYSTEM_INSTRUCTION = (
     "reason specific to that criterion explaining the score. Base the assessment on "
     "what is realistically known about the named vendor/product and general AI "
     "governance best practice; if information is limited, score conservatively and "
-    "say so in the reason. Also provide a 2-3 sentence overall justification "
-    "summarizing the assessment across all six criteria."
+    "say so in the reason. If the requester declared what categories of "
+    "organizational data this tool will touch, weigh that heavily for privacy "
+    "and compliance specifically — a tool that will see credentials or health "
+    "data warrants more scrutiny than one touching only public data, regardless "
+    "of the vendor's general reputation. Also provide a 2-3 sentence overall "
+    "justification summarizing the assessment across all six criteria."
 )
 _EVAL_SCHEMA = types.Schema(
     type="OBJECT",
@@ -246,6 +250,24 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
         f"Version: {tool['version'] or 'Unknown'}\n"
         f"Description: {tool['description'] or 'No description provided.'}"
     )
+
+    # Ground the evaluation in what requesters actually declared at intake,
+    # rather than leaving privacy/compliance scoring to guess purely from
+    # the tool's name — a request for a tool declaring "Credentials / API
+    # Keys" should visibly weigh differently than one declaring only
+    # "Customer / Client Data".
+    pending_requests = await ai_tool_request_repository.list_pending_requests_by_tool_name(
+        pool, tool["name"]
+    )
+    declared_categories = sorted(
+        {category for request in pending_requests for category in request["dataCategories"]}
+    )
+    if declared_categories:
+        prompt += f"\n\nData categories declared by requester(s): {', '.join(declared_categories)}"
+    if pending_requests:
+        prompt += "\n\nStated business justification(s):\n" + "\n".join(
+            f"- {request['businessReason']}" for request in pending_requests
+        )
 
     try:
         client = get_gemini_client()

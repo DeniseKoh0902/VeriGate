@@ -387,15 +387,15 @@ export function AiToolManagementPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-start justify-between">
+    <div className="p-4 sm:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">AI Tool Management</h1>
           <p className="mt-1 text-sm text-slate-500">
             Register, approve, and evaluate AI tools available within the organization.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
             className="w-auto"
@@ -412,8 +412,8 @@ export function AiToolManagementPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        <Card className="col-span-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
           <div className="border-b border-slate-100 px-5 py-4">
             <h2 className="font-semibold text-slate-900">Registered AI Tools</h2>
           </div>
@@ -446,7 +446,7 @@ export function AiToolManagementPage() {
           </div>
 
           {toolForm && (
-            <div className="grid grid-cols-5 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+            <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4 sm:grid-cols-2 lg:grid-cols-5">
               <Input
                 placeholder="Model name"
                 value={toolForm.name}
@@ -482,7 +482,8 @@ export function AiToolManagementPage() {
             </div>
           )}
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="px-5 py-2 font-medium">Model</th>
@@ -520,6 +521,13 @@ export function AiToolManagementPage() {
                   </td>
                   <td className="px-5 py-3">
                     <Badge status={statusBadge[toolStatus(tool)]}>{toolStatus(tool)}</Badge>
+                    {toolStatus(tool) === 'Pending Review' &&
+                      tool.earliestSlaDeadline &&
+                      new Date(tool.earliestSlaDeadline) < new Date() && (
+                        <p className="mt-1 text-xs font-medium text-red-600">
+                          Overdue — review needed
+                        </p>
+                      )}
                   </td>
                   <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-3 text-slate-400">
@@ -550,6 +558,7 @@ export function AiToolManagementPage() {
               ))}
             </tbody>
           </table>
+          </div>
 
           <Pagination
             currentPage={page}
