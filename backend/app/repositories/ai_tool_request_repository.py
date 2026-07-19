@@ -91,14 +91,16 @@ async def create_request(
     tool_name: str,
     business_reason: str,
     department: str,
+    data_categories: list[str],
 ) -> asyncpg.Record:
     request_id = str(uuid.uuid4())
     async with pool.acquire() as conn:
         return await conn.fetchrow(
             """
             INSERT INTO "ai_tool_requests"
-                ("id", "userId", "toolName", "businessReason", "department")
-            VALUES ($1, $2, $3, $4, $5)
+                ("id", "userId", "toolName", "businessReason", "department",
+                 "dataCategories", "slaDeadline")
+            VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP + INTERVAL '5 days')
             RETURNING *
             """,
             request_id,
@@ -106,4 +108,5 @@ async def create_request(
             tool_name,
             business_reason,
             department,
+            data_categories,
         )

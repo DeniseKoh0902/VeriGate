@@ -144,8 +144,8 @@ export function DashboardPage() {
   );
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-start justify-between">
+    <div className="p-4 sm:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Control Plane Overview</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -182,7 +182,7 @@ export function DashboardPage() {
       ) : (
         data && (
           <>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {data.statTiles.map((tile) => {
                 const delta = tileDelta(tile);
                 return (
@@ -211,8 +211,8 @@ export function DashboardPage() {
               })}
             </div>
 
-            <div className="mt-6 grid grid-cols-3 gap-6">
-              <div className="col-span-2 space-y-6">
+            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="space-y-6 lg:col-span-2">
                 <Card>
                   <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                     <h2 className="font-semibold text-slate-900">Real-Time Risk Alert Feed</h2>
@@ -272,40 +272,42 @@ export function DashboardPage() {
                         : 'No alerts match this filter.'}
                     </p>
                   ) : (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
-                          <th className="px-5 py-2 font-medium">Timestamp</th>
-                          <th className="px-5 py-2 font-medium">Detection Type</th>
-                          <th className="px-5 py-2 font-medium">Model Source</th>
-                          <th className="px-5 py-2 font-medium">Risk Level</th>
-                          <th className="px-5 py-2 font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAlerts.map((alert) => (
-                          <tr key={alert.id} className="border-t border-slate-100">
-                            <td className="px-5 py-3 font-mono text-xs text-slate-500">
-                              {formatTimestamp(alert.createdAt)}
-                            </td>
-                            <td className="px-5 py-3 text-slate-700">{alert.alertType}</td>
-                            <td className="px-5 py-3 text-slate-500">
-                              {alert.aiToolName ?? 'Unknown tool'}
-                            </td>
-                            <td className="px-5 py-3">
-                              <Badge status={severityBadge[alert.severity] ?? 'warning'}>
-                                {alert.severity}
-                              </Badge>
-                            </td>
-                            <td className="px-5 py-3">
-                              <Badge status={alertStatusBadge[alert.status] ?? 'warning'}>
-                                {alert.status}
-                              </Badge>
-                            </td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[560px] text-sm">
+                        <thead>
+                          <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+                            <th className="px-5 py-2 font-medium">Timestamp</th>
+                            <th className="px-5 py-2 font-medium">Detection Type</th>
+                            <th className="px-5 py-2 font-medium">Model Source</th>
+                            <th className="px-5 py-2 font-medium">Risk Level</th>
+                            <th className="px-5 py-2 font-medium">Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {filteredAlerts.map((alert) => (
+                            <tr key={alert.id} className="border-t border-slate-100">
+                              <td className="px-5 py-3 font-mono text-xs text-slate-500">
+                                {formatTimestamp(alert.createdAt)}
+                              </td>
+                              <td className="px-5 py-3 text-slate-700">{alert.alertType}</td>
+                              <td className="px-5 py-3 text-slate-500">
+                                {alert.aiToolName ?? 'Unknown tool'}
+                              </td>
+                              <td className="px-5 py-3">
+                                <Badge status={severityBadge[alert.severity] ?? 'warning'}>
+                                  {alert.severity}
+                                </Badge>
+                              </td>
+                              <td className="px-5 py-3">
+                                <Badge status={alertStatusBadge[alert.status] ?? 'warning'}>
+                                  {alert.status}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
 
                   <Link
@@ -317,7 +319,7 @@ export function DashboardPage() {
                   </Link>
                 </Card>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <Card className="p-5">
                     <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Risk Distribution by Engine

@@ -156,8 +156,8 @@ export function AiWorkspacePage() {
   };
 
   return (
-    <div className="grid h-full grid-cols-4 grid-rows-1 gap-6 p-8">
-      <div className="col-span-3 flex flex-col">
+    <div className="grid grid-cols-1 gap-6 p-4 sm:p-8 lg:h-full lg:grid-cols-4 lg:grid-rows-1">
+      <div className="flex min-h-[70vh] flex-col lg:col-span-3 lg:min-h-0">
         <div className="mb-4">
           <h1 className="text-2xl font-bold text-slate-900">AI Workspace</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -296,7 +296,7 @@ export function AiWorkspacePage() {
                         </>
                       )}
 
-                      <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             Original
@@ -392,7 +392,7 @@ export function AiWorkspacePage() {
         </Card>
       </div>
 
-      <Card className="flex h-full flex-col overflow-hidden p-4">
+      <Card className="flex h-full min-h-[280px] flex-col overflow-hidden p-4 lg:min-h-0">
         <div className="mb-3 flex shrink-0 items-center justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Chat History

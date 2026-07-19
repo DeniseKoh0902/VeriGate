@@ -41,6 +41,7 @@ class AiToolOut(BaseModel):
     createdAt: UtcDatetime
     updatedAt: UtcDatetime
     overallScore: int | None
+    earliestSlaDeadline: UtcDatetime | None
 
 
 class AiTrustEvaluationCreate(BaseModel):
