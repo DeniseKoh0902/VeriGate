@@ -167,11 +167,15 @@ export function AiToolManagementPage() {
 
   const disableTool = async (tool: AiTool) => {
     if (!window.confirm(`Disable "${tool.name}"? It will no longer be approved for use.`)) return;
+    const reason = window.prompt(
+      `Why is "${tool.name}" being disabled? This is shared with everyone who currently has access.`,
+    );
+    if (reason === null || !reason.trim()) return;
     try {
-      const updated: AiToolUpdateInput = { riskTier: 'BLOCKED' };
+      const updated: AiToolUpdateInput = { riskTier: 'BLOCKED', decisionNotes: reason.trim() };
       const result = await aiToolService.updateAiTool(tool.id, updated);
       setTools((prev) => prev.map((t) => (t.id === tool.id ? result : t)));
-      toast.success(`"${tool.name}" has been disabled.`);
+      toast.success(`"${tool.name}" has been disabled. Employees with access have been notified.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to disable AI tool.');
     }
@@ -183,7 +187,7 @@ export function AiToolManagementPage() {
       await aiToolService.deleteAiTool(tool.id);
       setTools((prev) => prev.filter((t) => t.id !== tool.id));
       if (selectedToolId === tool.id) setSelectedToolId(null);
-      toast.success('AI tool removed.');
+      toast.success('AI tool removed. Any pending requesters have been notified.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to remove AI tool.');
     }
@@ -547,16 +551,14 @@ export function AiToolManagementPage() {
                     </span>
                   </div>
 
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      variant="secondary"
-                      className="w-auto"
-                      onClick={() => openReport(selectedTool)}
-                    >
-                      <FileText size={15} />
-                      View Full Report
-                    </Button>
-                  </div>
+                  <Button
+                    variant="secondary"
+                    className="mt-4"
+                    onClick={() => openReport(selectedTool)}
+                  >
+                    <FileText size={15} />
+                    View Full Report
+                  </Button>
 
                   <Button
                     variant="ghost"
