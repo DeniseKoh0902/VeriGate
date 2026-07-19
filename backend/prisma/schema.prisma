@@ -131,6 +131,11 @@ model AiTool {
   approvedById String?
   approvedBy   User?          @relation(fields: [approvedById], references: [id])
   approvedAt   DateTime?
+  // Human-readable rationale for the tool's current riskTier decision — set
+  // when a trust evaluation is approved or rejected. Reused to immediately
+  // resolve later duplicate AiToolRequests for the same tool name without
+  // requiring a fresh evaluation.
+  decisionNotes String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
@@ -142,19 +147,26 @@ model AiTool {
 }
 
 model AiTrustEvaluation {
-  id                  String   @id @default(uuid())
-  aiToolId            String
-  aiTool              AiTool   @relation(fields: [aiToolId], references: [id])
-  securityScore       Int
-  privacyScore        Int
-  complianceScore     Int
-  availabilityScore   Int
-  explainabilityScore Int
-  orgPolicyScore      Int
-  overallScore        Int
-  evaluatedById       String
-  evaluatedBy         User     @relation(fields: [evaluatedById], references: [id])
-  evaluatedAt         DateTime @default(now())
+  id                   String   @id @default(uuid())
+  aiToolId             String
+  aiTool               AiTool   @relation(fields: [aiToolId], references: [id])
+  securityScore        Int
+  securityReason       String?
+  privacyScore         Int
+  privacyReason        String?
+  complianceScore      Int
+  complianceReason     String?
+  availabilityScore    Int
+  availabilityReason   String?
+  explainabilityScore  Int
+  explainabilityReason String?
+  orgPolicyScore       Int
+  orgPolicyReason      String?
+  overallScore         Int
+  justification        String?
+  evaluatedById        String
+  evaluatedBy          User     @relation(fields: [evaluatedById], references: [id])
+  evaluatedAt          DateTime @default(now())
 
   @@map("ai_trust_evaluations")
 }

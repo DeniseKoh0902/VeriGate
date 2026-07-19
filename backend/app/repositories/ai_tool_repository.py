@@ -36,9 +36,47 @@ async def get_or_create_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncp
         )
 
 
+async def get_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(f'{_LIST_SELECT} WHERE t."name" = $1', name)
+
+
+async def create_pending_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncpg.Record:
+    """Creates a Pending Review placeholder AiTool row for a name that isn't
+    registered yet — used when an employee's AI Tool Request references a
+    tool nobody has registered, so it shows up in AI Tool Management for an
+    admin to evaluate. Unlike get_or_create_ai_tool_by_name (AI Workspace's
+    auto-approving lookup), this deliberately leaves riskTier/isApproved at
+    their unapproved defaults — a request must never silently grant access."""
+    tool_id = str(uuid.uuid4())
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO "ai_tools" ("id", "name", "vendor", "updatedAt")
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+            RETURNING *
+            """,
+            tool_id,
+            name,
+            "Unknown",
+        )
+    return {**dict(row), "overallScore": None}
+
+
 async def list_ai_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         return await conn.fetch(f'{_LIST_SELECT} ORDER BY t."createdAt" DESC')
+
+
+async def list_approved_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Tools currently APPROVED for use — the only ones AI Workspace should
+    let an employee pick from, kept in sync with AI Tool Management's status
+    column instead of a static frontend list."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            f'{_LIST_SELECT} WHERE t."riskTier" = \'APPROVED\' '
+            'ORDER BY e."overallScore" DESC NULLS LAST, t."name"'
+        )
 
 
 async def get_ai_tool(pool: asyncpg.Pool, tool_id: str) -> asyncpg.Record | None:
@@ -87,6 +125,7 @@ async def update_ai_tool(
     risk_tier: str | None = None,
     is_approved: bool | None = None,
     approved_by_id: str | None = None,
+    decision_notes: str | None = None,
 ) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -104,6 +143,7 @@ async def update_ai_tool(
                     WHEN $6::"AiToolRiskTier" IS NOT NULL AND $7 = false THEN NULL
                     ELSE "approvedAt"
                 END,
+                "decisionNotes" = CASE WHEN $6::"AiToolRiskTier" IS NOT NULL THEN $9 ELSE "decisionNotes" END,
                 "updatedAt" = CURRENT_TIMESTAMP
             WHERE "id" = $1
             RETURNING *
@@ -116,6 +156,7 @@ async def update_ai_tool(
             risk_tier,
             is_approved,
             approved_by_id,
+            decision_notes,
         )
     if row is None:
         return None

@@ -57,12 +57,12 @@ async def propose_trust_evaluation(tool_id: str) -> AiTrustEvaluationProposal:
     response_model=AiTrustEvaluationOut,
     status_code=status.HTTP_201_CREATED,
 )
-async def approve_trust_evaluation(
+async def resolve_trust_evaluation(
     tool_id: str,
     payload: AiTrustEvaluationCreate,
     current_user: UserOut = Depends(_require_governance),
 ) -> AiTrustEvaluationOut:
-    return await ai_tool_service.approve_trust_evaluation(tool_id, payload, current_user.id)
+    return await ai_tool_service.resolve_trust_evaluation(tool_id, payload, current_user.id)
 
 
 @router.get("/{tool_id}/trust-evaluations/latest", response_model=AiTrustEvaluationOut | None)

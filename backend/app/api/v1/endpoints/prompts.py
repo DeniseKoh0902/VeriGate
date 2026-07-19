@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends
 
 from app.core.dependencies import get_current_user
-from app.schemas.prompt import ChatSessionOut, PromptHistoryItem, PromptSubmitRequest, PromptSubmitResponse
+from app.schemas.prompt import (
+    AvailableModelOut,
+    ChatSessionOut,
+    PromptHistoryItem,
+    PromptSubmitRequest,
+    PromptSubmitResponse,
+)
 from app.schemas.user import UserOut
 from app.services import prompt_service
 
@@ -13,6 +19,13 @@ async def submit_prompt(
     payload: PromptSubmitRequest, current_user: UserOut = Depends(get_current_user)
 ) -> PromptSubmitResponse:
     return await prompt_service.submit_prompt(payload, current_user.id)
+
+
+@router.get("/available-models", response_model=list[AvailableModelOut])
+async def get_available_models(
+    current_user: UserOut = Depends(get_current_user),
+) -> list[AvailableModelOut]:
+    return await prompt_service.list_available_models()
 
 
 # Static "/sessions" is registered ahead of the dynamic "/sessions/{session_id}"

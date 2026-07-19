@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Ban, Trash2, Sparkles, Search, Check, X } from 'lucide-react';
+import { Plus, Ban, Trash2, Sparkles, Search, Check, X, FileText } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Pagination } from '@/components/ui/Pagination';
+import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/context/ToastContext';
 import * as aiToolService from '@/services/aiTool.service';
 import type {
@@ -12,11 +13,26 @@ import type {
   AiToolCreateInput,
   AiToolUpdateInput,
   AiTrustEvaluation,
-  AiTrustEvaluationProposal,
   TrustEvaluationScores,
 } from '@/types/aiTool.types';
 
 const PAGE_SIZE = 6;
+
+type ScoreKey =
+  | 'securityScore'
+  | 'privacyScore'
+  | 'complianceScore'
+  | 'availabilityScore'
+  | 'explainabilityScore'
+  | 'orgPolicyScore';
+
+type ReasonKey =
+  | 'securityReason'
+  | 'privacyReason'
+  | 'complianceReason'
+  | 'availabilityReason'
+  | 'explainabilityReason'
+  | 'orgPolicyReason';
 
 type ToolStatus = 'Approved' | 'Pending Review' | 'Disabled';
 
@@ -32,18 +48,33 @@ const statusBadge: Record<ToolStatus, 'good' | 'warning' | 'critical'> = {
   Disabled: 'critical',
 };
 
-const criteriaLabels: { key: keyof TrustEvaluationScores; label: string }[] = [
-  { key: 'securityScore', label: 'Security' },
-  { key: 'privacyScore', label: 'Privacy' },
-  { key: 'complianceScore', label: 'Compliance' },
-  { key: 'availabilityScore', label: 'Availability' },
-  { key: 'explainabilityScore', label: 'Explainability' },
-  { key: 'orgPolicyScore', label: 'Org. Policies' },
+const criteriaLabels: {
+  scoreKey: ScoreKey;
+  reasonKey: ReasonKey;
+  label: string;
+}[] = [
+  { scoreKey: 'securityScore', reasonKey: 'securityReason', label: 'Security' },
+  { scoreKey: 'privacyScore', reasonKey: 'privacyReason', label: 'Privacy' },
+  { scoreKey: 'complianceScore', reasonKey: 'complianceReason', label: 'Compliance' },
+  { scoreKey: 'availabilityScore', reasonKey: 'availabilityReason', label: 'Availability' },
+  { scoreKey: 'explainabilityScore', reasonKey: 'explainabilityReason', label: 'Explainability' },
+  { scoreKey: 'orgPolicyScore', reasonKey: 'orgPolicyReason', label: 'Org. Policies' },
 ];
 
 const emptyToolForm: AiToolCreateInput = { name: '', vendor: '', version: '', description: '' };
 
+interface ToolDetailsDraft {
+  vendor: string;
+  version: string;
+  description: string;
+}
+
 type StatusFilter = 'ALL' | ToolStatus;
+
+function averageScore(scores: TrustEvaluationScores): number {
+  const sum = criteriaLabels.reduce((total, { scoreKey }) => total + scores[scoreKey], 0);
+  return Math.round(sum / criteriaLabels.length);
+}
 
 export function AiToolManagementPage() {
   const toast = useToast();
@@ -51,7 +82,6 @@ export function AiToolManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [toolForm, setToolForm] = useState<AiToolCreateInput | null>(null);
-  const [editingToolId, setEditingToolId] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -60,10 +90,15 @@ export function AiToolManagementPage() {
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [latestEvaluation, setLatestEvaluation] = useState<AiTrustEvaluation | null>(null);
   const [isLoadingEvaluation, setIsLoadingEvaluation] = useState(false);
-  const [proposal, setProposal] = useState<AiTrustEvaluationProposal | null>(null);
   const [evalDraft, setEvalDraft] = useState<TrustEvaluationScores | null>(null);
+  const [justificationDraft, setJustificationDraft] = useState('');
+  const [detailsDraft, setDetailsDraft] = useState<ToolDetailsDraft | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isSubmittingEvaluation, setIsSubmittingEvaluation] = useState(false);
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectionReasonDraft, setRejectionReasonDraft] = useState('');
 
   const selectedTool = tools.find((t) => t.id === selectedToolId) ?? null;
 
@@ -84,7 +119,6 @@ export function AiToolManagementPage() {
 
   useEffect(() => {
     if (!selectedToolId) return;
-    setProposal(null);
     setEvalDraft(null);
     setLatestEvaluation(null);
     setIsLoadingEvaluation(true);
@@ -116,38 +150,16 @@ export function AiToolManagementPage() {
   }, [page, totalPages]);
 
   const startCreateTool = () => {
-    setEditingToolId(null);
     setToolForm(emptyToolForm);
-  };
-
-  const startEditTool = (tool: AiTool) => {
-    setEditingToolId(tool.id);
-    setToolForm({
-      name: tool.name,
-      vendor: tool.vendor,
-      version: tool.version ?? '',
-      description: tool.description ?? '',
-    });
   };
 
   const saveTool = async () => {
     if (!toolForm) return;
     try {
-      if (editingToolId) {
-        const updated = await aiToolService.updateAiTool(editingToolId, {
-          vendor: toolForm.vendor,
-          version: toolForm.version,
-          description: toolForm.description,
-        });
-        setTools((prev) => prev.map((t) => (t.id === editingToolId ? updated : t)));
-        toast.success('AI tool updated successfully.');
-      } else {
-        const created = await aiToolService.createAiTool(toolForm);
-        setTools((prev) => [created, ...prev]);
-        toast.success('AI tool registered successfully.');
-      }
+      const created = await aiToolService.createAiTool(toolForm);
+      setTools((prev) => [created, ...prev]);
+      toast.success('AI tool registered successfully.');
       setToolForm(null);
-      setEditingToolId(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to save AI tool.');
     }
@@ -180,16 +192,29 @@ export function AiToolManagementPage() {
   const startEvaluation = async (tool: AiTool) => {
     setSelectedToolId(tool.id);
     setIsEvaluating(true);
+    setIsRejecting(false);
+    setRejectionReasonDraft('');
     try {
       const result = await aiToolService.proposeTrustEvaluation(tool.id);
-      setProposal(result);
       setEvalDraft({
         securityScore: result.securityScore,
+        securityReason: result.securityReason,
         privacyScore: result.privacyScore,
+        privacyReason: result.privacyReason,
         complianceScore: result.complianceScore,
+        complianceReason: result.complianceReason,
         availabilityScore: result.availabilityScore,
+        availabilityReason: result.availabilityReason,
         explainabilityScore: result.explainabilityScore,
+        explainabilityReason: result.explainabilityReason,
         orgPolicyScore: result.orgPolicyScore,
+        orgPolicyReason: result.orgPolicyReason,
+      });
+      setJustificationDraft(result.justification);
+      setDetailsDraft({
+        vendor: tool.vendor,
+        version: tool.version ?? '',
+        description: tool.description ?? '',
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to generate an AI evaluation.');
@@ -198,27 +223,81 @@ export function AiToolManagementPage() {
     }
   };
 
-  const approveEvaluation = async () => {
-    if (!selectedTool || !evalDraft) return;
+  // Opens the full report for editing — either the just-generated AI draft,
+  // or (if none is pending) the tool's existing latest evaluation, so
+  // Approve/Reject and description edits are always reachable from here.
+  const openReport = (tool: AiTool) => {
+    if (!evalDraft && latestEvaluation) {
+      setEvalDraft({
+        securityScore: latestEvaluation.securityScore,
+        securityReason: latestEvaluation.securityReason ?? '',
+        privacyScore: latestEvaluation.privacyScore,
+        privacyReason: latestEvaluation.privacyReason ?? '',
+        complianceScore: latestEvaluation.complianceScore,
+        complianceReason: latestEvaluation.complianceReason ?? '',
+        availabilityScore: latestEvaluation.availabilityScore,
+        availabilityReason: latestEvaluation.availabilityReason ?? '',
+        explainabilityScore: latestEvaluation.explainabilityScore,
+        explainabilityReason: latestEvaluation.explainabilityReason ?? '',
+        orgPolicyScore: latestEvaluation.orgPolicyScore,
+        orgPolicyReason: latestEvaluation.orgPolicyReason ?? '',
+      });
+      setJustificationDraft(latestEvaluation.justification ?? '');
+    }
+    setDetailsDraft({
+      vendor: tool.vendor,
+      version: tool.version ?? '',
+      description: tool.description ?? '',
+    });
+    setIsReportOpen(true);
+  };
+
+  const closeReport = () => {
+    setIsReportOpen(false);
+    setIsRejecting(false);
+    setRejectionReasonDraft('');
+  };
+
+  const submitDecision = async (decision: 'APPROVED' | 'REJECTED') => {
+    if (!selectedTool || !evalDraft || !detailsDraft) return;
+    if (decision === 'REJECTED' && !rejectionReasonDraft.trim()) {
+      toast.error('A rejection reason is required.');
+      return;
+    }
     setIsSubmittingEvaluation(true);
     try {
-      const result = await aiToolService.approveTrustEvaluation(selectedTool.id, evalDraft);
+      const updatedTool = await aiToolService.updateAiTool(selectedTool.id, {
+        vendor: detailsDraft.vendor,
+        version: detailsDraft.version,
+        description: detailsDraft.description,
+      });
+      setTools((prev) => prev.map((t) => (t.id === selectedTool.id ? updatedTool : t)));
+
+      const result = await aiToolService.resolveTrustEvaluation(selectedTool.id, {
+        ...evalDraft,
+        justification: justificationDraft,
+        decision,
+        rejectionReason: decision === 'REJECTED' ? rejectionReasonDraft.trim() : null,
+      });
       setLatestEvaluation(result);
-      setProposal(null);
       setEvalDraft(null);
+      closeReport();
       await loadTools();
-      toast.success(`Trust evaluation approved — "${selectedTool.name}" is now Approved.`);
+      toast.success(
+        decision === 'APPROVED'
+          ? `Trust evaluation approved — "${selectedTool.name}" is now Approved, and any pending requests for it have been notified.`
+          : `Evaluation rejected — "${selectedTool.name}" is now Disabled, and any pending requests for it have been notified.`,
+      );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Unable to approve evaluation.');
+      toast.error(err instanceof Error ? err.message : 'Unable to submit the decision.');
     } finally {
       setIsSubmittingEvaluation(false);
     }
   };
 
-  const rejectEvaluation = () => {
-    setProposal(null);
+  const cancelReport = () => {
     setEvalDraft(null);
-    toast.success('AI evaluation discarded.');
+    closeReport();
   };
 
   return (
@@ -274,7 +353,6 @@ export function AiToolManagementPage() {
               <Input
                 placeholder="Model name"
                 value={toolForm.name}
-                disabled={!!editingToolId}
                 onChange={(e) => setToolForm({ ...toolForm, name: e.target.value })}
               />
               <Input
@@ -356,13 +434,6 @@ export function AiToolManagementPage() {
                         <Sparkles size={15} />
                       </button>
                       <button
-                        aria-label="Edit tool"
-                        className="hover:text-slate-700"
-                        onClick={() => startEditTool(tool)}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
                         aria-label="Disable tool"
                         className="hover:text-orange-600"
                         onClick={() => disableTool(tool)}
@@ -411,28 +482,21 @@ export function AiToolManagementPage() {
                 <p className="mt-4 text-sm text-slate-400">Analyzing tool with Gemini…</p>
               )}
 
-              {!isEvaluating && evalDraft && proposal && (
+              {!isEvaluating && evalDraft && (
                 <>
-                  <p className="mt-3 rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
-                    {proposal.justification}
-                  </p>
                   <div className="mt-4 space-y-3">
-                    {criteriaLabels.map(({ key, label }) => (
-                      <div key={key} className="flex items-center justify-between gap-3">
-                        <span className="text-xs text-slate-500">{label}</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={evalDraft[key]}
-                          onChange={(e) =>
-                            setEvalDraft({
-                              ...evalDraft,
-                              [key]: Math.max(0, Math.min(100, Number(e.target.value))),
-                            })
-                          }
-                          className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm font-semibold text-slate-700"
-                        />
+                    {criteriaLabels.map(({ scoreKey, label }) => (
+                      <div key={scoreKey}>
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="text-slate-500">{label}</span>
+                          <span className="font-semibold text-slate-700">{evalDraft[scoreKey]}</span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-slate-100">
+                          <div
+                            className="h-1.5 rounded-full bg-blue-600"
+                            style={{ width: `${evalDraft[scoreKey]}%` }}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -440,27 +504,14 @@ export function AiToolManagementPage() {
                   <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
                     <span className="text-xs font-medium text-slate-500">Overall Trust Score</span>
                     <span className="text-lg font-bold text-emerald-600">
-                      {Math.round(
-                        criteriaLabels.reduce((sum, { key }) => sum + evalDraft[key], 0) /
-                          criteriaLabels.length,
-                      )}
+                      {averageScore(evalDraft)}
                     </span>
                   </div>
 
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      className="w-auto"
-                      onClick={approveEvaluation}
-                      isLoading={isSubmittingEvaluation}
-                    >
-                      <Check size={15} />
-                      Approve
-                    </Button>
-                    <Button variant="secondary" className="w-auto" onClick={rejectEvaluation}>
-                      <X size={15} />
-                      Reject
-                    </Button>
-                  </div>
+                  <Button className="mt-4" onClick={() => openReport(selectedTool)}>
+                    <FileText size={15} />
+                    View Full Report
+                  </Button>
                 </>
               )}
 
@@ -471,18 +522,18 @@ export function AiToolManagementPage() {
               {!isEvaluating && !evalDraft && !isLoadingEvaluation && latestEvaluation && (
                 <>
                   <div className="mt-4 space-y-3">
-                    {criteriaLabels.map(({ key, label }) => (
-                      <div key={key}>
+                    {criteriaLabels.map(({ scoreKey, label }) => (
+                      <div key={scoreKey}>
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="text-slate-500">{label}</span>
                           <span className="font-semibold text-slate-700">
-                            {latestEvaluation[key]}
+                            {latestEvaluation[scoreKey]}
                           </span>
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-slate-100">
                           <div
                             className="h-1.5 rounded-full bg-blue-600"
-                            style={{ width: `${latestEvaluation[key]}%` }}
+                            style={{ width: `${latestEvaluation[scoreKey]}%` }}
                           />
                         </div>
                       </div>
@@ -496,9 +547,20 @@ export function AiToolManagementPage() {
                     </span>
                   </div>
 
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      variant="secondary"
+                      className="w-auto"
+                      onClick={() => openReport(selectedTool)}
+                    >
+                      <FileText size={15} />
+                      View Full Report
+                    </Button>
+                  </div>
+
                   <Button
-                    variant="secondary"
-                    className="mt-4"
+                    variant="ghost"
+                    className="mt-2"
                     onClick={() => startEvaluation(selectedTool)}
                   >
                     Re-evaluate with AI
@@ -521,6 +583,147 @@ export function AiToolManagementPage() {
           )}
         </Card>
       </div>
+
+      <Modal
+        isOpen={isReportOpen && !!selectedTool && !!evalDraft && !!detailsDraft}
+        onClose={closeReport}
+        title={`AI Trust Evaluation Report — ${selectedTool?.name ?? ''}`}
+        description="Review the tool details and evaluation below, adjust anything as needed, then approve or reject."
+        maxWidthClassName="max-w-3xl"
+      >
+        {evalDraft && detailsDraft && (
+          <div className="space-y-5">
+            <div className="rounded-lg border border-slate-200 p-4">
+              <p className="mb-3 text-sm font-semibold text-slate-900">Tool Details</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Vendor</label>
+                  <Input
+                    value={detailsDraft.vendor}
+                    onChange={(e) => setDetailsDraft({ ...detailsDraft, vendor: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Version</label>
+                  <Input
+                    value={detailsDraft.version}
+                    onChange={(e) => setDetailsDraft({ ...detailsDraft, version: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="text-xs font-medium text-slate-500">Description</label>
+                <textarea
+                  value={detailsDraft.description}
+                  onChange={(e) =>
+                    setDetailsDraft({ ...detailsDraft, description: e.target.value })
+                  }
+                  rows={2}
+                  className="mt-1 w-full resize-none rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {criteriaLabels.map(({ scoreKey, reasonKey, label }) => (
+              <div key={scoreKey} className="rounded-lg border border-slate-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-900">{label}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={evalDraft[scoreKey]}
+                    onChange={(e) =>
+                      setEvalDraft({
+                        ...evalDraft,
+                        [scoreKey]: Math.max(0, Math.min(100, Number(e.target.value))),
+                      })
+                    }
+                    className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm font-semibold text-slate-700"
+                  />
+                </div>
+                <textarea
+                  value={evalDraft[reasonKey]}
+                  onChange={(e) => setEvalDraft({ ...evalDraft, [reasonKey]: e.target.value })}
+                  rows={2}
+                  className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 focus:border-slate-400 focus:outline-none"
+                />
+              </div>
+            ))}
+
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Overall Justification</p>
+              <textarea
+                value={justificationDraft}
+                onChange={(e) => setJustificationDraft(e.target.value)}
+                rows={3}
+                className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 focus:border-slate-400 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+              <span className="text-xs font-medium text-slate-500">Overall Trust Score</span>
+              <span className="text-lg font-bold text-emerald-600">{averageScore(evalDraft)}</span>
+            </div>
+
+            {isRejecting && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <label className="text-xs font-semibold uppercase tracking-wide text-red-800">
+                  Reason for rejection (sent to the requester)
+                </label>
+                <textarea
+                  autoFocus
+                  value={rejectionReasonDraft}
+                  onChange={(e) => setRejectionReasonDraft(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Vendor has no published security or compliance documentation."
+                  className="mt-2 w-full resize-none rounded-md border border-red-200 bg-white px-2.5 py-2 text-sm text-slate-700 focus:border-red-400 focus:outline-none"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              {!isRejecting ? (
+                <>
+                  <Button
+                    className="w-auto"
+                    onClick={() => submitDecision('APPROVED')}
+                    isLoading={isSubmittingEvaluation}
+                  >
+                    <Check size={15} />
+                    Approve
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="w-auto"
+                    onClick={() => setIsRejecting(true)}
+                  >
+                    <X size={15} />
+                    Reject
+                  </Button>
+                  <Button variant="ghost" className="w-auto" onClick={cancelReport}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="secondary"
+                    className="w-auto border-red-300 text-red-700 hover:bg-red-50"
+                    onClick={() => submitDecision('REJECTED')}
+                    isLoading={isSubmittingEvaluation}
+                  >
+                    Confirm Reject
+                  </Button>
+                  <Button variant="ghost" className="w-auto" onClick={() => setIsRejecting(false)}>
+                    Back
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

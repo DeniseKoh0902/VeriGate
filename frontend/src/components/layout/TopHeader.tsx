@@ -1,5 +1,5 @@
-import { Bell } from 'lucide-react';
 import logoHeader from '@/assets/logoHeader.png';
+import { NotificationBell } from '@/components/common/NotificationBell';
 
 interface TopHeaderProps {
   userName?: string;
@@ -18,13 +18,7 @@ export function TopHeader({ userName = 'Admin User' }: TopHeaderProps) {
       <img src={logoHeader} alt="VeriGate" className="h-14 object-contain" />
 
       <div className="flex items-center gap-4">
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="text-slate-400 transition-colors hover:text-slate-600"
-        >
-          <Bell size={20} />
-        </button>
+        <NotificationBell />
         <div className="h-6 w-px bg-slate-200" />
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">

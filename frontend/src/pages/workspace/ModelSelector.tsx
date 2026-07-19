@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 
 export interface AiModelOption {
   name: string;
-  trustScore: number;
+  trustScore: number | null;
   recommended?: boolean;
 }
 
@@ -63,7 +63,7 @@ export function ModelSelector({ models, selected, onSelect }: ModelSelectorProps
         className="flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"
       >
         <span>{selectedModel?.name ?? selected}</span>
-        {selectedModel && (
+        {selectedModel && selectedModel.trustScore !== null && (
           <span className="text-xs font-normal text-slate-400">
             Trust {selectedModel.trustScore}
           </span>
@@ -110,7 +110,7 @@ export function ModelSelector({ models, selected, onSelect }: ModelSelectorProps
                   )}
                 </span>
                 <span className="flex items-center gap-2 text-xs text-slate-400">
-                  Trust {model.trustScore}
+                  {model.trustScore !== null && `Trust ${model.trustScore}`}
                   {model.name === selected && <Check size={14} className="text-blue-600" />}
                 </span>
               </button>

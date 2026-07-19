@@ -1,5 +1,6 @@
 import { apiFetch } from '@/lib/apiClient';
 import type {
+  AvailableModel,
   ChatSession,
   PromptHistoryItem,
   PromptSubmitInput,
@@ -11,6 +12,10 @@ export function submitPrompt(input: PromptSubmitInput) {
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+export function getAvailableModels() {
+  return apiFetch<AvailableModel[]>('/prompts/available-models');
 }
 
 export function listChatSessions() {

@@ -46,3 +46,9 @@ class ChatSessionOut(BaseModel):
     preview: str
     lastMessageAt: UtcDatetime
     createdAt: UtcDatetime
+
+
+class AvailableModelOut(BaseModel):
+    name: str
+    trustScore: int | None
+    recommended: bool
