@@ -13,7 +13,6 @@ import type { Employee, EmployeeCreateInput, Role } from '@/types/user.types';
 
 const roleLabels: Record<Role, string> = {
   ADMIN: 'Admin',
-  COMPLIANCE: 'Compliance',
   EMPLOYEE: 'Employee',
 };
 
@@ -220,7 +219,6 @@ export function EmployeeManagementPage() {
           >
             <option value="ALL">All Roles</option>
             <option value="EMPLOYEE">Employee</option>
-            <option value="COMPLIANCE">Compliance</option>
             <option value="ADMIN">Admin</option>
           </select>
           <select
@@ -278,7 +276,6 @@ export function EmployeeManagementPage() {
               onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
             >
               <option value="EMPLOYEE">Employee</option>
-              <option value="COMPLIANCE">Compliance</option>
               <option value="ADMIN">Admin</option>
             </select>
             <div className="flex gap-2">

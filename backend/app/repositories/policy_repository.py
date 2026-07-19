@@ -8,6 +8,31 @@ async def list_policies(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return await conn.fetch('SELECT * FROM "policies" ORDER BY "createdAt" DESC')
 
 
+async def list_active_policies_for_department(
+    pool: asyncpg.Pool, department: str
+) -> list[asyncpg.Record]:
+    """Active policies an employee in `department` is actually subject to —
+    org-wide ones plus ones scoped to their own department. Excludes inactive
+    policies and every other department's.
+
+    "Org-wide" has two representations in this column: the Policy Management
+    form stores the literal string "All Departments" (not SQL NULL) when no
+    specific department is chosen, and older rows predating that convention
+    may still hold true NULL — both are treated as org-wide here."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT * FROM "policies"
+            WHERE "isActive" = true
+              AND ("appliesToDepartment" IS NULL
+                   OR "appliesToDepartment" = 'All Departments'
+                   OR "appliesToDepartment" = $1)
+            ORDER BY "createdAt" DESC
+            """,
+            department,
+        )
+
+
 async def get_policy_by_id(pool: asyncpg.Pool, policy_id: str) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         return await conn.fetchrow('SELECT * FROM "policies" WHERE "id" = $1', policy_id)

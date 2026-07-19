@@ -58,10 +58,10 @@ async def notify_governance_new_tool_request(
     requester_name: str,
     business_reason: str,
 ) -> None:
-    """Notifies (in-app + email) every ADMIN/COMPLIANCE user that a newly
-    requested AI tool needs review, since a request alone doesn't put
-    anything in front of an admin otherwise — they'd have no way to know to
-    go register/evaluate it in AI Tool Management."""
+    """Notifies (in-app + email) every ADMIN user that a newly requested AI
+    tool needs review, since a request alone doesn't put anything in front
+    of an admin otherwise — they'd have no way to know to go
+    register/evaluate it in AI Tool Management."""
     reviewers = await user_repository.list_governance_users(pool)
     title = f'New AI tool request: "{tool_name}"'
     message = f'{requester_name} requested access to "{tool_name}" — {business_reason}'

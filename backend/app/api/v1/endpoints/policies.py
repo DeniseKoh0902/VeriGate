@@ -15,10 +15,10 @@ from app.services import policy_service
 router = APIRouter(
     prefix="/policies",
     tags=["policies"],
-    dependencies=[Depends(require_roles("ADMIN", "COMPLIANCE"))],
+    dependencies=[Depends(require_roles("ADMIN"))],
 )
 
-_require_governance = require_roles("ADMIN", "COMPLIANCE")
+_require_admin = require_roles("ADMIN")
 
 
 # Static "/sensitive-data-rules..." paths are registered before the
@@ -36,7 +36,7 @@ async def get_sensitive_data_rules() -> list[SensitiveDataRuleOut]:
 )
 async def create_sensitive_data_rule(
     payload: SensitiveDataRuleCreate,
-    current_user: UserOut = Depends(_require_governance),
+    current_user: UserOut = Depends(_require_admin),
 ) -> SensitiveDataRuleOut:
     return await policy_service.create_sensitive_data_rule(payload, current_user.id)
 
@@ -45,14 +45,14 @@ async def create_sensitive_data_rule(
 async def update_sensitive_data_rule(
     rule_id: str,
     payload: SensitiveDataRuleUpdate,
-    current_user: UserOut = Depends(_require_governance),
+    current_user: UserOut = Depends(_require_admin),
 ) -> SensitiveDataRuleOut:
     return await policy_service.update_sensitive_data_rule(rule_id, payload, current_user.id)
 
 
 @router.delete("/sensitive-data-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sensitive_data_rule(
-    rule_id: str, current_user: UserOut = Depends(_require_governance)
+    rule_id: str, current_user: UserOut = Depends(_require_admin)
 ) -> None:
     await policy_service.delete_sensitive_data_rule(rule_id, current_user.id)
 
@@ -64,20 +64,20 @@ async def get_policies() -> list[PolicyOut]:
 
 @router.post("", response_model=PolicyOut, status_code=status.HTTP_201_CREATED)
 async def create_policy(
-    payload: PolicyCreate, current_user: UserOut = Depends(_require_governance)
+    payload: PolicyCreate, current_user: UserOut = Depends(_require_admin)
 ) -> PolicyOut:
     return await policy_service.create_policy(payload, current_user.id)
 
 
 @router.patch("/{policy_id}", response_model=PolicyOut)
 async def update_policy(
-    policy_id: str, payload: PolicyUpdate, current_user: UserOut = Depends(_require_governance)
+    policy_id: str, payload: PolicyUpdate, current_user: UserOut = Depends(_require_admin)
 ) -> PolicyOut:
     return await policy_service.update_policy(policy_id, payload, current_user.id)
 
 
 @router.delete("/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_policy(
-    policy_id: str, current_user: UserOut = Depends(_require_governance)
+    policy_id: str, current_user: UserOut = Depends(_require_admin)
 ) -> None:
     await policy_service.delete_policy(policy_id, current_user.id)

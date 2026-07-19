@@ -39,13 +39,13 @@ async def list_admin_contacts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
 
 
 async def list_governance_users(pool: asyncpg.Pool) -> list[asyncpg.Record]:
-    """Active ADMIN/COMPLIANCE users — the audience for anything that needs a
+    """Active ADMIN users — the audience for anything that needs a
     governance reviewer's attention, e.g. a newly submitted AI tool request."""
     async with pool.acquire() as conn:
         return await conn.fetch(
             """
             SELECT "id", "name", "email" FROM "users"
-            WHERE "role" IN ('ADMIN', 'COMPLIANCE') AND "isActive" = true
+            WHERE "role" = 'ADMIN' AND "isActive" = true
             """
         )
 

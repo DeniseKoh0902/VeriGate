@@ -8,6 +8,8 @@ from app.api.v1.endpoints import (
     auth,
     compliance,
     contact,
+    dashboard,
+    employee_policies,
     governance_copilot,
     notifications,
     policies,
@@ -19,7 +21,9 @@ from app.api.v1.endpoints import (
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(policies.router)
+api_router.include_router(employee_policies.router)
 api_router.include_router(policy_recommendations.router)
 api_router.include_router(ai_tool_requests.router)
 api_router.include_router(users.router)

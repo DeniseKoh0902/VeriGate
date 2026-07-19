@@ -25,6 +25,12 @@ _MAX_NEW_RECOMMENDATIONS = 5
 # Medium matches the Policy Management form's own default.
 _DEFAULT_POLICY_SEVERITY = "Medium"
 
+# Policy Management's own create/edit form stores this literal string (not
+# SQL NULL) for an org-wide policy's appliesToDepartment — matched here so a
+# recommendation's org-wide scope is represented identically whether the
+# resulting Policy was created by hand or accepted/modified from here.
+_ALL_DEPARTMENTS = "All Departments"
+
 _SYSTEM_INSTRUCTION = (
     "You are VeriGate's AI Policy Recommendation engine, generating governance "
     "policy suggestions for enterprise IT/compliance teams from real usage and "
@@ -128,7 +134,7 @@ async def generate_recommendations(actor_id: str) -> list[PolicyRecommendationOu
             pool,
             title=title,
             rationale=rationale,
-            department=item.department.strip() if item.department else None,
+            department=item.department.strip() if item.department else _ALL_DEPARTMENTS,
             confidence_score=max(0, min(100, item.confidenceScore)),
         )
         await audit_log_repository.create_audit_log(
@@ -166,7 +172,7 @@ async def accept_recommendation(recommendation_id: str, actor_id: str) -> Policy
             name=row["title"],
             description=row["rationale"],
             severity=_DEFAULT_POLICY_SEVERITY,
-            appliesToDepartment=row["department"],
+            appliesToDepartment=row["department"] or _ALL_DEPARTMENTS,
         ),
         actor_id,
     )
@@ -195,7 +201,7 @@ async def modify_recommendation(
             name=payload.title,
             description=payload.rationale,
             severity=_DEFAULT_POLICY_SEVERITY,
-            appliesToDepartment=row["department"],
+            appliesToDepartment=row["department"] or _ALL_DEPARTMENTS,
         ),
         actor_id,
     )
