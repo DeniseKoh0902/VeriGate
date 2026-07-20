@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Ban } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import * as employeePolicyService from '@/services/employeePolicy.service';
-import type { Policy, RuleAction, SensitiveDataRule, RiskLevel } from '@/types/policy.types';
+import type {
+  Policy,
+  RuleAction,
+  SensitiveDataRule,
+  RiskLevel,
+  UseCasePolicy,
+} from '@/types/policy.types';
 
 type BadgeStatus = 'good' | 'warning' | 'serious' | 'critical' | 'neutral';
 
@@ -28,6 +34,11 @@ const actionInfo: Record<RuleAction, { label: string; description: string; badge
   SANITIZE: {
     label: 'Auto-Redacted',
     description: 'The matched text is automatically masked before your prompt is sent.',
+    badge: 'serious',
+  },
+  REQUIRE_APPROVAL: {
+    label: 'Requires Approval',
+    description: 'Your prompt is held until a governance admin reviews and approves it.',
     badge: 'serious',
   },
   BLOCK: {
@@ -55,6 +66,7 @@ function policySeverityBadge(severity: string): BadgeStatus {
 export function MyPoliciesPage() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [rules, setRules] = useState<SensitiveDataRule[]>([]);
+  const [useCasePolicies, setUseCasePolicies] = useState<UseCasePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,12 +75,14 @@ export function MyPoliciesPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const [policyRows, ruleRows] = await Promise.all([
+        const [policyRows, ruleRows, useCasePolicyRows] = await Promise.all([
           employeePolicyService.listMyPolicies(),
           employeePolicyService.listActiveSensitiveDataRules(),
+          employeePolicyService.listActiveUseCasePolicies(),
         ]);
         setPolicies(policyRows);
         setRules(ruleRows);
+        setUseCasePolicies(useCasePolicyRows);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to load policies.');
       } finally {
@@ -154,6 +168,43 @@ export function MyPoliciesPage() {
                     <p className="text-sm font-semibold text-slate-900">{rule.category}</p>
                     <div className="flex shrink-0 items-center gap-2">
                       <Badge status={riskLevelBadge[rule.riskLevel]}>{rule.riskLevel}</Badge>
+                      <Badge status={info.badge}>{info.label}</Badge>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-sm text-slate-500">{info.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card>
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Ban size={18} className="text-red-600" />
+              <h2 className="font-semibold text-slate-900">Use Case Policies</h2>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              What VeriGate restricts you from using AI to decide, regardless of what data is in
+              your prompt — e.g. hiring, termination, or medical decisions.
+            </p>
+          </div>
+
+          {!isLoading && useCasePolicies.length === 0 && (
+            <p className="px-5 py-8 text-center text-sm text-slate-400">
+              No use case policies are currently active.
+            </p>
+          )}
+
+          <div className="divide-y divide-slate-100">
+            {useCasePolicies.map((policy) => {
+              const info = actionInfo[policy.action];
+              return (
+                <div key={policy.id} className="px-5 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className="text-sm font-semibold text-slate-900">{policy.useCase}</p>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge status={riskLevelBadge[policy.riskLevel]}>{policy.riskLevel}</Badge>
                       <Badge status={info.badge}>{info.label}</Badge>
                     </div>
                   </div>

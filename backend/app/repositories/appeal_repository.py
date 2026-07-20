@@ -1,6 +1,9 @@
+import logging
 import uuid
 
 import asyncpg
+
+logger = logging.getLogger(__name__)
 
 _SOURCE_OWNERSHIP_QUERIES = {
     "PROMPT_BLOCK": """
@@ -70,13 +73,40 @@ async def get_appeal_by_source_any_user(
 
 
 async def list_all_appeals(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Overdue appeals first (most overdue first), then still-within-SLA
+    PENDING/UNDER_REVIEW appeals soonest-due first, then everything else
+    newest-first. RESOLVED appeals are never "overdue" (nothing left to
+    do), and neither is AWAITING_INFO — the clock is on the employee's
+    response, not the admin's review, so it shouldn't compete for
+    attention at the top of the queue. Mirrors ai_tool_repository's
+    list_ai_tools ordering and the frontend's own getDisplayStatus rule
+    for what counts as overdue."""
+    logger.warning("MARKER-DEBUG-12345: list_all_appeals called, file=%s", __file__)
     async with pool.acquire() as conn:
         return await conn.fetch(
             """
             SELECT a.*, u."name" AS "employeeName", u."email" AS "employeeEmail"
             FROM "appeals" a
             JOIN "users" u ON u."id" = a."userId"
-            ORDER BY a."createdAt" DESC
+            ORDER BY
+                CASE
+                    WHEN a."status" IN ('PENDING', 'UNDER_REVIEW')
+                         AND a."slaDeadline" < CURRENT_TIMESTAMP THEN 0
+                    WHEN a."status" IN ('PENDING', 'UNDER_REVIEW')
+                         AND a."slaDeadline" IS NOT NULL THEN 1
+                    ELSE 2
+                END,
+                -- Unlike a tool's earliestSlaDeadline (NULL once approved),
+                -- an appeal's slaDeadline is set once at creation and never
+                -- cleared — so it must be masked out here for anything
+                -- outside tiers 0/1, or a RESOLVED appeal's ancient deadline
+                -- would keep sorting by it instead of falling through to
+                -- createdAt DESC below.
+                CASE
+                    WHEN a."status" IN ('PENDING', 'UNDER_REVIEW') THEN a."slaDeadline"
+                    ELSE NULL
+                END ASC NULLS LAST,
+                a."createdAt" DESC
             """
         )
 

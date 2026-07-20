@@ -253,6 +253,65 @@ export function AiWorkspacePage() {
                     </div>
                   )}
 
+                  {turn.result?.status === 'PENDING_APPROVAL' && (
+                    <div className="ml-10 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="flex items-center gap-2">
+                        <Clock size={16} className="text-amber-600" />
+                        <Badge status="serious">Held For Approval</Badge>
+                      </div>
+
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                        Matched Use Case Policy
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {turn.result.riskFindings.map((finding, index) => (
+                          <div key={index} className="rounded-lg bg-white p-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-slate-900">{finding.category}</p>
+                              <Badge status={riskLevelBadge[finding.riskLevel]}>
+                                {finding.riskLevel}
+                              </Badge>
+                            </div>
+                            {finding.note && (
+                              <p className="mt-1 text-xs text-slate-500">{finding.note}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <p className="mt-3 flex items-start gap-2 text-sm text-amber-800">
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+                        This prompt was not sent to the AI model yet — it's waiting on a
+                        governance admin to review and approve it.
+                      </p>
+
+                      <div className="mt-4 flex gap-2">
+                        <Button
+                          variant="ghost"
+                          className="w-auto"
+                          onClick={() => handleDiscardTurn(turn.id)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {turn.result?.status === 'FORWARDED' && turn.result.riskFindings.length > 0 && (
+                    <div className="ml-10 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                        <AlertTriangle size={13} className="text-amber-600" />
+                        Flagged (still sent)
+                      </div>
+                      {turn.result.riskFindings.map((finding, index) => (
+                        <p key={index} className="mt-1 text-xs text-amber-700">
+                          <span className="font-medium">{finding.category}</span>
+                          {finding.note ? ` — ${finding.note}` : null}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
                   {turn.result?.status === 'SANITIZED' && !turn.isRevealed && (
                     <div className="ml-10 rounded-xl border border-red-200 bg-red-50 p-4">
                       <div className="flex items-center gap-2">

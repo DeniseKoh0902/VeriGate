@@ -15,6 +15,8 @@ import type {
   RuleAction,
   SensitiveDataRule,
   SensitiveDataRuleCreateInput,
+  UseCasePolicy,
+  UseCasePolicyCreateInput,
 } from '@/types/policy.types';
 
 const PAGE_SIZE = 5;
@@ -30,11 +32,16 @@ const actionBadge: Record<RuleAction, 'good' | 'warning' | 'serious' | 'critical
   ALLOW: 'good',
   WARN: 'warning',
   SANITIZE: 'serious',
+  REQUIRE_APPROVAL: 'serious',
   BLOCK: 'critical',
 };
 
 function titleCase(value: string) {
-  return value.charAt(0) + value.slice(1).toLowerCase();
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 const emptyPolicyForm: PolicyCreateInput = {
@@ -48,6 +55,14 @@ const emptyRuleForm: SensitiveDataRuleCreateInput = {
   category: '',
   riskLevel: 'MEDIUM',
   action: 'WARN',
+};
+
+const emptyUseCasePolicyForm: UseCasePolicyCreateInput = {
+  useCase: '',
+  description: '',
+  riskLevel: 'HIGH',
+  action: 'REQUIRE_APPROVAL',
+  minConfidence: 70,
 };
 
 type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE';
@@ -65,6 +80,13 @@ export function PolicyManagementPage() {
   const [ruleForm, setRuleForm] = useState<SensitiveDataRuleCreateInput | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
+  const [useCasePolicies, setUseCasePolicies] = useState<UseCasePolicy[]>([]);
+  const [useCaseForm, setUseCaseForm] = useState<UseCasePolicyCreateInput | null>(null);
+  const [editingUseCaseId, setEditingUseCaseId] = useState<string | null>(null);
+  const [useCaseQuery, setUseCaseQuery] = useState('');
+  const [useCaseActionFilter, setUseCaseActionFilter] = useState<RuleAction | 'ALL'>('ALL');
+  const [useCasePage, setUseCasePage] = useState(1);
+
   const [policyQuery, setPolicyQuery] = useState('');
   const [policyDepartmentFilter, setPolicyDepartmentFilter] = useState<string>('ALL');
   const [policySeverityFilter, setPolicySeverityFilter] = useState<string>('ALL');
@@ -79,12 +101,14 @@ export function PolicyManagementPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [policyList, ruleList] = await Promise.all([
+      const [policyList, ruleList, useCasePolicyList] = await Promise.all([
         policyService.listPolicies(),
         policyService.listSensitiveDataRules(),
+        policyService.listUseCasePolicies(),
       ]);
       setPolicies(policyList);
       setRules(ruleList);
+      setUseCasePolicies(useCasePolicyList);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to load policy data.');
     } finally {
@@ -140,6 +164,30 @@ export function PolicyManagementPage() {
   useEffect(() => {
     if (rulePage > ruleTotalPages) setRulePage(ruleTotalPages);
   }, [rulePage, ruleTotalPages]);
+
+  const useCaseSuggestions = useMemo(
+    () => Array.from(new Set(useCasePolicies.map((p) => p.useCase))),
+    [useCasePolicies],
+  );
+
+  const filteredUseCasePolicies = useMemo(() => {
+    const term = useCaseQuery.trim().toLowerCase();
+    return useCasePolicies.filter((policy) => {
+      const matchesTerm = !term || policy.useCase.toLowerCase().includes(term);
+      const matchesAction = useCaseActionFilter === 'ALL' || policy.action === useCaseActionFilter;
+      return matchesTerm && matchesAction;
+    });
+  }, [useCasePolicies, useCaseQuery, useCaseActionFilter]);
+
+  const useCaseTotalPages = Math.max(1, Math.ceil(filteredUseCasePolicies.length / PAGE_SIZE));
+  const paginatedUseCasePolicies = filteredUseCasePolicies.slice(
+    (useCasePage - 1) * PAGE_SIZE,
+    useCasePage * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    if (useCasePage > useCaseTotalPages) setUseCasePage(useCaseTotalPages);
+  }, [useCasePage, useCaseTotalPages]);
 
   const startCreatePolicy = () => {
     setEditingPolicyId(null);
@@ -223,6 +271,52 @@ export function PolicyManagementPage() {
       toast.success('Rule deleted.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to delete rule.');
+    }
+  };
+
+  const startCreateUseCasePolicy = () => {
+    setEditingUseCaseId(null);
+    setUseCaseForm(emptyUseCasePolicyForm);
+  };
+
+  const startEditUseCasePolicy = (policy: UseCasePolicy) => {
+    setEditingUseCaseId(policy.id);
+    setUseCaseForm({
+      useCase: policy.useCase,
+      description: policy.description ?? '',
+      riskLevel: policy.riskLevel,
+      action: policy.action,
+      minConfidence: policy.minConfidence,
+    });
+  };
+
+  const saveUseCasePolicy = async () => {
+    if (!useCaseForm) return;
+    try {
+      if (editingUseCaseId) {
+        const updated = await policyService.updateUseCasePolicy(editingUseCaseId, useCaseForm);
+        setUseCasePolicies((prev) => prev.map((p) => (p.id === editingUseCaseId ? updated : p)));
+        toast.success('Use case policy updated successfully.');
+      } else {
+        const created = await policyService.createUseCasePolicy(useCaseForm);
+        setUseCasePolicies((prev) => [created, ...prev]);
+        toast.success('Use case policy created successfully.');
+      }
+      setUseCaseForm(null);
+      setEditingUseCaseId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save use case policy.');
+    }
+  };
+
+  const deleteUseCasePolicy = async (id: string) => {
+    if (!window.confirm('Delete this use case policy?')) return;
+    try {
+      await policyService.deleteUseCasePolicy(id);
+      setUseCasePolicies((prev) => prev.filter((p) => p.id !== id));
+      toast.success('Use case policy deleted.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to delete use case policy.');
     }
   };
 
@@ -556,6 +650,190 @@ export function PolicyManagementPage() {
           currentPage={rulePage}
           totalPages={ruleTotalPages}
           onPageChange={setRulePage}
+          className="border-t border-slate-100"
+        />
+      </Card>
+
+      <Card className="mt-6">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">Use Case Policies</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Governs what AI is allowed to <em>decide</em> (e.g. hiring, termination, monitoring)
+              — separate from what data it can see.
+            </p>
+          </div>
+          <Button variant="secondary" className="w-auto" onClick={startCreateUseCasePolicy}>
+            <Plus size={15} />
+            Add Use Case Policy
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="w-72">
+            <Input
+              placeholder="Search by use case"
+              leftIcon={<Search size={16} />}
+              value={useCaseQuery}
+              onChange={(e) => {
+                setUseCaseQuery(e.target.value);
+                setUseCasePage(1);
+              }}
+            />
+          </div>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={useCaseActionFilter}
+            onChange={(e) => {
+              setUseCaseActionFilter(e.target.value as RuleAction | 'ALL');
+              setUseCasePage(1);
+            }}
+          >
+            <option value="ALL">All Actions</option>
+            <option value="ALLOW">Allow</option>
+            <option value="WARN">Warn</option>
+            <option value="REQUIRE_APPROVAL">Require Approval</option>
+            <option value="BLOCK">Block</option>
+          </select>
+        </div>
+
+        {useCaseForm && (
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Input
+                  placeholder="Use case (e.g. Hiring Decisions)"
+                  list="use-case-suggestions"
+                  value={useCaseForm.useCase}
+                  onChange={(e) => setUseCaseForm({ ...useCaseForm, useCase: e.target.value })}
+                />
+                <datalist id="use-case-suggestions">
+                  {useCaseSuggestions.map((useCase) => (
+                    <option key={useCase} value={useCase} />
+                  ))}
+                </datalist>
+              </div>
+              <Input
+                placeholder="Description — helps the classifier recognize this use case (optional)"
+                value={useCaseForm.description ?? ''}
+                onChange={(e) => setUseCaseForm({ ...useCaseForm, description: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+                value={useCaseForm.riskLevel}
+                onChange={(e) =>
+                  setUseCaseForm({ ...useCaseForm, riskLevel: e.target.value as RiskLevel })
+                }
+              >
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+                <option value="CRITICAL">Critical</option>
+              </select>
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+                value={useCaseForm.action}
+                onChange={(e) =>
+                  setUseCaseForm({ ...useCaseForm, action: e.target.value as RuleAction })
+                }
+              >
+                <option value="ALLOW">Allow</option>
+                <option value="WARN">Warn</option>
+                <option value="REQUIRE_APPROVAL">Require Approval</option>
+                <option value="BLOCK">Block</option>
+              </select>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                placeholder="Min confidence %"
+                value={useCaseForm.minConfidence}
+                onChange={(e) =>
+                  setUseCaseForm({ ...useCaseForm, minConfidence: Number(e.target.value) })
+                }
+              />
+              <div className="flex gap-2">
+                <Button
+                  className="w-auto"
+                  onClick={saveUseCasePolicy}
+                  disabled={!useCaseForm.useCase}
+                >
+                  Save
+                </Button>
+                <Button variant="ghost" className="w-auto" onClick={() => setUseCaseForm(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="px-5 py-2 font-medium">Use Case</th>
+              <th className="px-5 py-2 font-medium">Risk Level</th>
+              <th className="px-5 py-2 font-medium">Action</th>
+              <th className="px-5 py-2 font-medium">Min Confidence</th>
+              <th className="px-5 py-2 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!isLoading && paginatedUseCasePolicies.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
+                  {useCasePolicies.length === 0
+                    ? 'No use case policies yet — add one to get started.'
+                    : 'No use case policies match your search/filter.'}
+                </td>
+              </tr>
+            )}
+            {paginatedUseCasePolicies.map((policy) => (
+              <tr key={policy.id} className="border-t border-slate-100">
+                <td className="px-5 py-3">
+                  <div className="font-medium text-slate-900">{policy.useCase}</div>
+                  {policy.description && (
+                    <div className="mt-0.5 text-xs text-slate-500">{policy.description}</div>
+                  )}
+                </td>
+                <td className="px-5 py-3">
+                  <Badge status={riskLevelBadge[policy.riskLevel]}>
+                    {titleCase(policy.riskLevel)}
+                  </Badge>
+                </td>
+                <td className="px-5 py-3">
+                  <Badge status={actionBadge[policy.action]}>{titleCase(policy.action)}</Badge>
+                </td>
+                <td className="px-5 py-3 text-slate-500">{policy.minConfidence}%</td>
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-3 text-slate-400">
+                    <button
+                      aria-label="Edit use case policy"
+                      className="hover:text-slate-700"
+                      onClick={() => startEditUseCasePolicy(policy)}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      aria-label="Delete use case policy"
+                      className="hover:text-red-600"
+                      onClick={() => deleteUseCasePolicy(policy.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <Pagination
+          currentPage={useCasePage}
+          totalPages={useCaseTotalPages}
+          onPageChange={setUseCasePage}
           className="border-t border-slate-100"
         />
       </Card>

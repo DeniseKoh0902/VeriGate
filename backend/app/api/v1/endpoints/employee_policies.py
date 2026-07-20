@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.core.dependencies import get_current_user
-from app.schemas.policy import PolicyOut, SensitiveDataRuleOut
+from app.schemas.policy import PolicyOut, SensitiveDataRuleOut, UseCasePolicyOut
 from app.schemas.user import UserOut
 from app.services import policy_service
 
@@ -22,3 +22,10 @@ async def get_active_sensitive_data_rules(
     current_user: UserOut = Depends(get_current_user),
 ) -> list[SensitiveDataRuleOut]:
     return await policy_service.list_active_sensitive_data_rules()
+
+
+@router.get("/use-case-policies", response_model=list[UseCasePolicyOut])
+async def get_active_use_case_policies(
+    current_user: UserOut = Depends(get_current_user),
+) -> list[UseCasePolicyOut]:
+    return await policy_service.list_active_use_case_policies()

@@ -74,7 +74,10 @@ _CATEGORY_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 _RISK_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-_ACTION_ORDER = {"ALLOW": 0, "WARN": 1, "SANITIZE": 2, "BLOCK": 3}
+# REQUIRE_APPROVAL sits between SANITIZE and BLOCK: unlike SANITIZE it never
+# auto-forwards anything, but unlike BLOCK it isn't a hard, permanent refusal
+# — a human can still let it through.
+_ACTION_ORDER = {"ALLOW": 0, "WARN": 1, "SANITIZE": 2, "REQUIRE_APPROVAL": 3, "BLOCK": 4}
 
 
 @dataclass
@@ -129,11 +132,18 @@ def detect(prompt_text: str, active_rules: list[asyncpg.Record]) -> list[RuleMat
     return matches
 
 
+def most_restrictive(actions: list[str]) -> str:
+    """The most restrictive action among independently-resolved actions wins
+    — e.g. combining a sensitive-data-rule action with a use-case-policy
+    action for the same prompt."""
+    if not actions:
+        return "ALLOW"
+    return max(actions, key=lambda a: _ACTION_ORDER[a])
+
+
 def resolve_action(matches: list[RuleMatch]) -> str:
     """The most restrictive action among all matches wins."""
-    if not matches:
-        return "ALLOW"
-    return max((m.action for m in matches), key=lambda a: _ACTION_ORDER[a])
+    return most_restrictive([m.action for m in matches])
 
 
 def sanitize(

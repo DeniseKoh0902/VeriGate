@@ -1,5 +1,5 @@
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-export type PromptStatus = 'FORWARDED' | 'BLOCKED' | 'SANITIZED';
+export type PromptStatus = 'FORWARDED' | 'BLOCKED' | 'SANITIZED' | 'PENDING_APPROVAL';
 
 export interface RiskFinding {
   category: string;
@@ -10,6 +10,16 @@ export interface RiskFinding {
 export interface SanitizationChange {
   original: string;
   replacement: string;
+}
+
+// Raw output from the backend's intent classifier for this prompt — present
+// whenever at least one Use Case Policy was active and evaluated, regardless
+// of whether it actually matched. Lets you see what Gemini returned (e.g. to
+// debug why a prompt was or wasn't flagged) without backend console access.
+export interface IntentClassification {
+  category: string;
+  confidence: number;
+  matchedUseCase: string | null;
 }
 
 export interface PromptSubmitInput {
@@ -26,6 +36,7 @@ export interface PromptSubmitResult {
   riskFindings: RiskFinding[];
   sanitizationChanges: SanitizationChange[];
   responseText: string | null;
+  intentClassification?: IntentClassification | null;
 }
 
 export interface PromptHistoryItem {

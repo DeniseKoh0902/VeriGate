@@ -19,6 +19,8 @@ from app.core.config import get_settings
 from app.db.pool import connect_pool, disconnect_pool
 from app.services import bias_drift_service
 
+logging.basicConfig(level=logging.INFO)
+
 settings = get_settings()
 logger = logging.getLogger(__name__)
 

@@ -6,6 +6,9 @@ import type {
   SensitiveDataRule,
   SensitiveDataRuleCreateInput,
   SensitiveDataRuleUpdateInput,
+  UseCasePolicy,
+  UseCasePolicyCreateInput,
+  UseCasePolicyUpdateInput,
 } from '@/types/policy.types';
 
 export function listPolicies() {
@@ -44,4 +47,26 @@ export function updateSensitiveDataRule(id: string, input: SensitiveDataRuleUpda
 
 export function deleteSensitiveDataRule(id: string) {
   return apiFetch<void>(`/policies/sensitive-data-rules/${id}`, { method: 'DELETE' });
+}
+
+export function listUseCasePolicies() {
+  return apiFetch<UseCasePolicy[]>('/policies/use-case-policies');
+}
+
+export function createUseCasePolicy(input: UseCasePolicyCreateInput) {
+  return apiFetch<UseCasePolicy>('/policies/use-case-policies', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateUseCasePolicy(id: string, input: UseCasePolicyUpdateInput) {
+  return apiFetch<UseCasePolicy>(`/policies/use-case-policies/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteUseCasePolicy(id: string) {
+  return apiFetch<void>(`/policies/use-case-policies/${id}`, { method: 'DELETE' });
 }

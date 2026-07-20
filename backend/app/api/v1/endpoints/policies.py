@@ -8,6 +8,9 @@ from app.schemas.policy import (
     SensitiveDataRuleCreate,
     SensitiveDataRuleOut,
     SensitiveDataRuleUpdate,
+    UseCasePolicyCreate,
+    UseCasePolicyOut,
+    UseCasePolicyUpdate,
 )
 from app.schemas.user import UserOut
 from app.services import policy_service
@@ -55,6 +58,39 @@ async def delete_sensitive_data_rule(
     rule_id: str, current_user: UserOut = Depends(_require_admin)
 ) -> None:
     await policy_service.delete_sensitive_data_rule(rule_id, current_user.id)
+
+
+@router.get("/use-case-policies", response_model=list[UseCasePolicyOut])
+async def get_use_case_policies() -> list[UseCasePolicyOut]:
+    return await policy_service.list_use_case_policies()
+
+
+@router.post(
+    "/use-case-policies",
+    response_model=UseCasePolicyOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_use_case_policy(
+    payload: UseCasePolicyCreate,
+    current_user: UserOut = Depends(_require_admin),
+) -> UseCasePolicyOut:
+    return await policy_service.create_use_case_policy(payload, current_user.id)
+
+
+@router.patch("/use-case-policies/{policy_id}", response_model=UseCasePolicyOut)
+async def update_use_case_policy(
+    policy_id: str,
+    payload: UseCasePolicyUpdate,
+    current_user: UserOut = Depends(_require_admin),
+) -> UseCasePolicyOut:
+    return await policy_service.update_use_case_policy(policy_id, payload, current_user.id)
+
+
+@router.delete("/use-case-policies/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_use_case_policy(
+    policy_id: str, current_user: UserOut = Depends(_require_admin)
+) -> None:
+    await policy_service.delete_use_case_policy(policy_id, current_user.id)
 
 
 @router.get("", response_model=list[PolicyOut])
