@@ -1,4 +1,9 @@
-const API_BASE = '/api/v1';
+// Relative path by default so local dev keeps using vite.config.ts's proxy
+// to localhost:8001. Set VITE_API_BASE_URL to an absolute URL (e.g.
+// https://verigate-api.onrender.com/api/v1) when frontend and backend are
+// deployed on separate origins — a relative path would otherwise resolve
+// against the frontend's own domain instead of the backend's.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 const TOKEN_STORAGE_KEY = 'verigate_token';
 
 let authToken: string | null = localStorage.getItem(TOKEN_STORAGE_KEY);
