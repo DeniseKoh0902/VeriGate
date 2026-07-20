@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>VeriGate Shadow AI Monitor</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>VeriGate Shadow AI Monitor</h1>
+
+    <section id="loggedOutView" hidden>
+      <p class="hint">Sign in with your VeriGate account so detections can be reported.</p>
+      <form id="loginForm">
+        <input type="email" id="email" placeholder="Work email" required autocomplete="username" />
+        <input type="password" id="password" placeholder="Password" required autocomplete="current-password" />
+        <button type="submit">Sign in</button>
+      </form>
+      <p id="loginError" class="error" hidden></p>
+    </section>
+
+    <section id="loggedInView" hidden>
+      <p class="status status--on">Protected</p>
+      <p class="hint">Signed in as <strong id="userEmail"></strong>. Visits to ungoverned AI tools are being reported to VeriGate.</p>
+      <button id="logoutButton" class="secondary">Sign out</button>
+    </section>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

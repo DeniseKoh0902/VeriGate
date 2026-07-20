@@ -8,6 +8,7 @@ from app.repositories import (
     notification_repository,
     prompt_repository,
     risk_alert_repository,
+    user_repository,
 )
 from app.schemas.prompt import RiskFindingOut
 from app.schemas.risk_alert import RiskAlertAdminOut
@@ -110,3 +111,46 @@ async def resolve_alert(alert_id: str, reviewer_id: str) -> RiskAlertAdminOut:
 
 async def escalate_alert(alert_id: str, reviewer_id: str) -> RiskAlertAdminOut:
     return await _set_status(alert_id, "ESCALATED", reviewer_id)
+
+
+async def report_shadow_ai(user_id: str, domain: str, page_url: str) -> None:
+    """Records a browser-extension sighting of an employee on an AI tool site
+    that never touched VeriGate's own prompt pipeline — the Gap 1 blind spot
+    (data leaving via chat.openai.com etc. is otherwise invisible). The
+    extension blocks the page client-side; this is the audit trail behind
+    that block, not just a passive log."""
+    pool = get_pool()
+    description = (
+        f'Employee attempted to use "{domain}" directly, bypassing VeriGate governance, '
+        f"and was blocked by the browser extension. Page: {page_url}"
+    )
+
+    alert_row = await risk_alert_repository.create_risk_alert(
+        pool,
+        user_id=user_id,
+        prompt_id=None,
+        alert_type="SHADOW_AI_DETECTED",
+        severity="HIGH",
+        description=description,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=user_id,
+        action="Shadow AI Blocked",
+        entity_type="RiskAlert",
+        entity_id=alert_row["id"],
+    )
+
+    employee = await user_repository.get_user_by_id(pool, user_id)
+    reviewers = await user_repository.list_governance_users(pool)
+    for reviewer in reviewers:
+        await notification_repository.create_notification(
+            pool,
+            user_id=reviewer["id"],
+            title="Shadow AI usage blocked",
+            message=f'{employee["name"] if employee else "An employee"} was blocked from using "{domain}" outside VeriGate.',
+            notification_type="RISK_ALERT_CREATED",
+            related_entity_type="RiskAlert",
+            related_entity_id=alert_row["id"],
+        )
