@@ -10,7 +10,7 @@ from app.repositories import (
     risk_alert_repository,
     user_repository,
 )
-from app.schemas.prompt import RiskFindingOut
+from app.schemas.prompt import AttachmentOut, RiskFindingOut
 from app.schemas.risk_alert import RiskAlertAdminOut
 
 
@@ -48,6 +48,18 @@ async def _to_admin_out(
         riskFindings=[
             RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
             for f in prompt["riskFindings"]
+        ]
+        if prompt
+        else [],
+        attachments=[
+            AttachmentOut(
+                id=a["id"],
+                fileName=a["fileName"],
+                mimeType=a["mimeType"],
+                fileSize=a["fileSize"],
+                isRedacted=a["isRedacted"],
+            )
+            for a in prompt["attachments"]
         ]
         if prompt
         else [],

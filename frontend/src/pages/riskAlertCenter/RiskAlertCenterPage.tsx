@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
+import { AttachmentPreview } from '@/components/AttachmentPreview';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/context/ToastContext';
 import * as riskAlertService from '@/services/riskAlert.service';
@@ -313,6 +314,19 @@ export function RiskAlertCenterPage() {
                   <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
                     {selected.promptText}
                   </p>
+                </div>
+              )}
+
+              {selected.attachments.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Attachments
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selected.attachments.map((attachment) => (
+                      <AttachmentPreview key={attachment.id} attachment={attachment} />
+                    ))}
+                  </div>
                 </div>
               )}
 

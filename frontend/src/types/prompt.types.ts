@@ -12,6 +12,17 @@ export interface SanitizationChange {
   replacement: string;
 }
 
+export interface PromptAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  // True when this attachment's own content matched a Sensitive Data Rule /
+  // Use Case Policy — its bytes were never forwarded to the AI model (pixel-
+  // level redaction of an image isn't feasible), only kept for audit review.
+  isRedacted: boolean;
+}
+
 // Raw output from the backend's intent classifier for this prompt — present
 // whenever at least one Use Case Policy was active and evaluated, regardless
 // of whether it actually matched. Lets you see what Gemini returned (e.g. to
@@ -26,6 +37,7 @@ export interface PromptSubmitInput {
   aiToolName: string;
   promptText: string;
   sessionId?: string | null;
+  files?: File[];
 }
 
 export interface PromptSubmitResult {
@@ -37,6 +49,7 @@ export interface PromptSubmitResult {
   sanitizationChanges: SanitizationChange[];
   responseText: string | null;
   intentClassification?: IntentClassification | null;
+  attachments: PromptAttachment[];
 }
 
 export interface PromptHistoryItem {
@@ -47,6 +60,7 @@ export interface PromptHistoryItem {
   riskFindings: RiskFinding[];
   responseText: string | null;
   createdAt: string;
+  attachments: PromptAttachment[];
 }
 
 export interface ChatSession {

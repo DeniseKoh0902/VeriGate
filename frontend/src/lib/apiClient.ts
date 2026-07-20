@@ -37,10 +37,15 @@ function extractErrorMessage(body: unknown): string {
 }
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  // FormData bodies (file uploads) must NOT get an explicit Content-Type —
+  // the browser sets `multipart/form-data; boundary=...` itself, and
+  // overriding it here would drop the boundary and break parsing server-side.
+  const isFormData = options?.body instanceof FormData;
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...options?.headers,
     },
@@ -59,4 +64,24 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   }
 
   return response.json();
+}
+
+// Fetches an authenticated file (e.g. a prompt attachment) as a blob URL —
+// a plain <img src="/api/...">  can't carry the Authorization header, so the
+// bytes have to come through fetch() instead. Callers must revokeObjectURL
+// the result when done with it to avoid leaking memory.
+export async function apiFetchObjectUrl(path: string): Promise<string> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      onUnauthorized?.();
+    }
+    throw new Error('Unable to load file.');
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }

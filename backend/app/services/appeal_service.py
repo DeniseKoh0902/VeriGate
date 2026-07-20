@@ -22,7 +22,7 @@ from app.schemas.appeal import (
     AppealResolveRequest,
     AppealRespondRequest,
 )
-from app.schemas.prompt import RiskFindingOut
+from app.schemas.prompt import AttachmentOut, RiskFindingOut
 from app.services import incident_service, prompt_service
 from app.services.ai_tool_decision_notifier import notify_tool_decision
 
@@ -168,6 +168,18 @@ async def _to_admin_out(pool: asyncpg.Pool, row: asyncpg.Record) -> AppealAdminO
         riskFindings=[
             RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
             for f in prompt["riskFindings"]
+        ]
+        if prompt
+        else [],
+        attachments=[
+            AttachmentOut(
+                id=a["id"],
+                fileName=a["fileName"],
+                mimeType=a["mimeType"],
+                fileSize=a["fileSize"],
+                isRedacted=a["isRedacted"],
+            )
+            for a in prompt["attachments"]
         ]
         if prompt
         else [],

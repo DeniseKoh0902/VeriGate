@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   SendHorizontal,
   Bot,
@@ -8,6 +8,8 @@ import {
   ShieldOff,
   ArrowRight,
   Plus,
+  Paperclip,
+  X,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,6 +18,7 @@ import { MarkdownMessage } from '@/components/ui/MarkdownMessage';
 import { useToast } from '@/context/ToastContext';
 import * as promptService from '@/services/prompt.service';
 import { ModelSelector } from './ModelSelector';
+import { AttachmentPreview } from '@/components/AttachmentPreview';
 import type { AvailableModel, ChatSession, PromptSubmitResult, RiskLevel } from '@/types/prompt.types';
 
 const riskLevelBadge: Record<RiskLevel, 'good' | 'warning' | 'serious' | 'critical'> = {
@@ -25,12 +28,31 @@ const riskLevelBadge: Record<RiskLevel, 'good' | 'warning' | 'serious' | 'critic
   CRITICAL: 'critical',
 };
 
+// Kept in sync with the backend's attachment_service limits/allow-list —
+// this is just an early, friendlier check; the backend re-validates
+// regardless since it's the source of truth.
+const MAX_ATTACHMENTS = 4;
+const MAX_ATTACHMENT_SIZE = 15 * 1024 * 1024;
+const ACCEPTED_ATTACHMENT_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'text/markdown',
+  'application/json',
+];
+
 interface Turn {
   id: string;
   userPrompt: string;
   result: PromptSubmitResult | null;
   isRevealed: boolean;
   createdAt: Date;
+  pendingFiles: File[];
 }
 
 export function AiWorkspacePage() {
@@ -44,7 +66,9 @@ export function AiWorkspacePage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -94,9 +118,11 @@ export function AiWorkspacePage() {
             riskFindings: item.riskFindings,
             sanitizationChanges: [],
             responseText: item.responseText,
+            attachments: item.attachments,
           },
           isRevealed: true,
           createdAt: new Date(item.createdAt),
+          pendingFiles: [],
         })),
       );
     } catch (err) {
@@ -106,21 +132,56 @@ export function AiWorkspacePage() {
     }
   };
 
+  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    event.target.value = ''; // allow re-selecting the same file later
+    if (selected.length === 0) return;
+
+    const accepted: File[] = [];
+    for (const file of selected) {
+      if (!ACCEPTED_ATTACHMENT_TYPES.includes(file.type)) {
+        toast.error(`"${file.name}" isn't a supported file type.`);
+        continue;
+      }
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        toast.error(`"${file.name}" exceeds the ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB attachment limit.`);
+        continue;
+      }
+      accepted.push(file);
+    }
+
+    setAttachedFiles((prev) => {
+      const next = [...prev, ...accepted];
+      if (next.length > MAX_ATTACHMENTS) {
+        toast.error(`You can attach at most ${MAX_ATTACHMENTS} files per message.`);
+        return next.slice(0, MAX_ATTACHMENTS);
+      }
+      return next;
+    });
+  };
+
+  const removeAttachedFile = (index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async () => {
-    if (!prompt.trim() || isSubmitting || !selectedModel) return;
+    if ((!prompt.trim() && attachedFiles.length === 0) || isSubmitting || !selectedModel) return;
     const id = crypto.randomUUID();
     const userPrompt = prompt;
+    const files = attachedFiles;
     setTurns((prev) => [
       ...prev,
-      { id, userPrompt, result: null, isRevealed: false, createdAt: new Date() },
+      { id, userPrompt, result: null, isRevealed: false, createdAt: new Date(), pendingFiles: files },
     ]);
     setPrompt('');
+    setAttachedFiles([]);
     setIsSubmitting(true);
     try {
       const submitted = await promptService.submitPrompt({
         aiToolName: selectedModel,
         promptText: userPrompt,
         sessionId: currentSessionId,
+        files,
       });
       setTurns((prev) =>
         prev.map((turn) =>
@@ -137,6 +198,7 @@ export function AiWorkspacePage() {
       toast.error(err instanceof Error ? err.message : 'Unable to submit prompt.');
       setTurns((prev) => prev.filter((turn) => turn.id !== id));
       setPrompt(userPrompt);
+      setAttachedFiles(files);
     } finally {
       setIsSubmitting(false);
     }
@@ -184,14 +246,34 @@ export function AiWorkspacePage() {
                 <div key={turn.id} id={`turn-${turn.id}`} className="space-y-3">
                   <div className="flex justify-end">
                     <div className="flex max-w-lg items-start gap-2">
-                      <div className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm leading-relaxed text-white">
-                        {turn.userPrompt}
-                      </div>
+                      {turn.userPrompt.trim() && (
+                        <div className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm leading-relaxed text-white">
+                          {turn.userPrompt}
+                        </div>
+                      )}
                       <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500">
                         <User size={14} />
                       </span>
                     </div>
                   </div>
+
+                  {(turn.result?.attachments.length ?? turn.pendingFiles.length) > 0 && (
+                    <div className="flex flex-wrap justify-end gap-2 pr-9">
+                      {turn.result
+                        ? turn.result.attachments.map((attachment) => (
+                            <AttachmentPreview key={attachment.id} attachment={attachment} />
+                          ))
+                        : turn.pendingFiles.map((file, index) => (
+                            <span
+                              key={index}
+                              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-500"
+                            >
+                              <Paperclip size={12} />
+                              {file.name}
+                            </span>
+                          ))}
+                    </div>
+                  )}
 
                   {!turn.result && (
                     <div className="flex items-center gap-3">
@@ -413,6 +495,34 @@ export function AiWorkspacePage() {
           </div>
 
           <div className="border-t border-slate-100 p-4">
+            {attachedFiles.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {attachedFiles.map((file, index) => (
+                  <span
+                    key={index}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1 pl-2.5 pr-1.5 text-xs text-slate-600"
+                  >
+                    <Paperclip size={12} className="shrink-0 text-slate-400" />
+                    <span className="max-w-[10rem] truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachedFile(index)}
+                      className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_ATTACHMENT_TYPES.join(',')}
+              onChange={handleFileSelect}
+              className="hidden"
+            />
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -437,15 +547,27 @@ export function AiWorkspacePage() {
               ) : (
                 <ModelSelector models={models} selected={selectedModel} onSelect={setSelectedModel} />
               )}
-              <Button
-                className="w-auto"
-                onClick={handleSubmit}
-                isLoading={isSubmitting}
-                disabled={!selectedModel}
-              >
-                Submit Prompt
-                <SendHorizontal size={15} />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-auto px-3"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!selectedModel || attachedFiles.length >= MAX_ATTACHMENTS}
+                  title="Attach a file or image"
+                >
+                  <Paperclip size={15} />
+                </Button>
+                <Button
+                  className="w-auto"
+                  onClick={handleSubmit}
+                  isLoading={isSubmitting}
+                  disabled={!selectedModel}
+                >
+                  Submit Prompt
+                  <SendHorizontal size={15} />
+                </Button>
+              </div>
             </div>
           </div>
         </Card>

@@ -123,7 +123,94 @@ async def _attach_risk_findings(
     for finding in findings:
         findings_by_prompt.setdefault(finding["promptId"], []).append(finding)
 
-    return [{**dict(p), "riskFindings": findings_by_prompt.get(p["id"], [])} for p in prompts]
+    attachments = await conn.fetch(
+        """
+        SELECT "id", "promptId", "fileName", "mimeType", "fileSize", "isRedacted"
+        FROM "prompt_attachments"
+        WHERE "promptId" = ANY($1::text[])
+        ORDER BY "createdAt" ASC
+        """,
+        [p["id"] for p in prompts],
+    )
+    attachments_by_prompt: dict[str, list[asyncpg.Record]] = {}
+    for attachment in attachments:
+        attachments_by_prompt.setdefault(attachment["promptId"], []).append(attachment)
+
+    return [
+        {
+            **dict(p),
+            "riskFindings": findings_by_prompt.get(p["id"], []),
+            "attachments": attachments_by_prompt.get(p["id"], []),
+        }
+        for p in prompts
+    ]
+
+
+async def create_prompt_attachment(
+    pool: asyncpg.Pool,
+    *,
+    prompt_id: str,
+    file_name: str,
+    mime_type: str,
+    file_size: int,
+    file_data: bytes,
+    extracted_text: str | None,
+    is_redacted: bool,
+) -> asyncpg.Record:
+    attachment_id = str(uuid.uuid4())
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            INSERT INTO "prompt_attachments"
+                ("id", "promptId", "fileName", "mimeType", "fileSize", "fileData",
+                 "extractedText", "isRedacted")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING "id", "promptId", "fileName", "mimeType", "fileSize", "isRedacted"
+            """,
+            attachment_id,
+            prompt_id,
+            file_name,
+            mime_type,
+            file_size,
+            file_data,
+            extracted_text,
+            is_redacted,
+        )
+
+
+async def get_attachment_for_user(
+    pool: asyncpg.Pool, attachment_id: str, user_id: str
+) -> asyncpg.Record | None:
+    """Scoped to the employee who owns the prompt it's attached to — an
+    attachment carries the same sensitivity as the prompt it came from, so it
+    gets the same per-user isolation as get_session/get_prompt_by_id."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT a."id", a."fileName", a."mimeType", a."fileData", a."isRedacted"
+            FROM "prompt_attachments" a
+            JOIN "prompts" p ON p."id" = a."promptId"
+            JOIN "ai_sessions" s ON s."id" = p."sessionId"
+            WHERE a."id" = $1 AND s."userId" = $2
+            """,
+            attachment_id,
+            user_id,
+        )
+
+
+async def get_attachment_by_id(pool: asyncpg.Pool, attachment_id: str) -> asyncpg.Record | None:
+    """Unscoped lookup for governance admins reviewing a risk alert or
+    appeal — they need to open an attachment that isn't theirs, unlike
+    get_attachment_for_user which is deliberately locked to the submitter."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT "id", "fileName", "mimeType", "fileData", "isRedacted"
+            FROM "prompt_attachments"
+            WHERE "id" = $1
+            """,
+            attachment_id,
+        )
 
 
 async def list_prompts_for_user(pool: asyncpg.Pool, user_id: str) -> list[dict]:
@@ -172,8 +259,15 @@ async def get_prompt_by_id(pool: asyncpg.Pool, prompt_id: str) -> dict | None:
             'SELECT "category", "riskLevel", "note" FROM "prompt_risk_findings" WHERE "promptId" = $1',
             prompt_id,
         )
+        attachments = await conn.fetch(
+            """
+            SELECT "id", "fileName", "mimeType", "fileSize", "isRedacted"
+            FROM "prompt_attachments" WHERE "promptId" = $1 ORDER BY "createdAt" ASC
+            """,
+            prompt_id,
+        )
 
-    return {**dict(prompt), "riskFindings": findings}
+    return {**dict(prompt), "riskFindings": findings, "attachments": attachments}
 
 
 async def get_ai_response_by_prompt_id(pool: asyncpg.Pool, prompt_id: str) -> asyncpg.Record | None:

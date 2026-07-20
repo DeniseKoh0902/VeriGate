@@ -4,6 +4,7 @@ import type {
   ComplianceRiskFinding,
   ComplianceSourceType,
 } from '@/types/compliance.types';
+import type { PromptAttachment } from '@/types/prompt.types';
 
 export interface Appeal {
   id: string;
@@ -50,6 +51,7 @@ export interface AppealAdmin {
   resolvedAt: string | null;
   promptText: string | null;
   riskFindings: ComplianceRiskFinding[];
+  attachments: PromptAttachment[];
 }
 
 export interface AppealResolveInput {

@@ -236,8 +236,32 @@ model Prompt {
   riskFindings PromptRiskFinding[]
   response     AiResponse?
   riskAlerts   RiskAlert[]
+  attachments  PromptAttachment[]
 
   @@map("prompts")
+}
+
+// An employee-uploaded image/document attached to a prompt. Its content is
+// extracted (OCR/transcription for images, text for documents) via Gemini so
+// it can be run through the exact same SensitiveDataRule + UseCasePolicy
+// pipeline as promptText — governance shouldn't have a blind spot just
+// because the sensitive data was in a screenshot instead of typed text.
+// isRedacted marks an attachment whose extracted content tripped a match:
+// its bytes are kept for audit/appeal purposes but never forwarded to the
+// AI model, since pixel-level redaction of an image isn't feasible here.
+model PromptAttachment {
+  id            String   @id @default(uuid())
+  promptId      String
+  prompt        Prompt   @relation(fields: [promptId], references: [id])
+  fileName      String
+  mimeType      String
+  fileSize      Int
+  fileData      Bytes
+  extractedText String?
+  isRedacted    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@map("prompt_attachments")
 }
 
 model PromptRiskFinding {

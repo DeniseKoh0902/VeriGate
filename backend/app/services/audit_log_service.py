@@ -16,7 +16,7 @@ from app.repositories import (
     user_repository,
 )
 from app.schemas.audit_log import AuditLogDetailOut, AuditLogOut
-from app.schemas.prompt import RiskFindingOut
+from app.schemas.prompt import AttachmentOut, RiskFindingOut
 
 
 async def list_all_logs() -> list[AuditLogOut]:
@@ -48,6 +48,16 @@ async def _add_prompt_detail(pool, fields: dict, prompt_id: str) -> None:
     fields["riskFindings"] = [
         RiskFindingOut(category=f["category"], riskLevel=f["riskLevel"], note=f["note"])
         for f in prompt["riskFindings"]
+    ]
+    fields["attachments"] = [
+        AttachmentOut(
+            id=a["id"],
+            fileName=a["fileName"],
+            mimeType=a["mimeType"],
+            fileSize=a["fileSize"],
+            isRedacted=a["isRedacted"],
+        )
+        for a in prompt["attachments"]
     ]
 
 

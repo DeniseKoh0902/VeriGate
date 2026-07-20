@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.appeal import AppealResolution, AppealStatus
 from app.schemas.common import UtcDatetime
-from app.schemas.prompt import RiskFindingOut
+from app.schemas.prompt import AttachmentOut, RiskFindingOut
 
 RiskAlertStatus = Literal["OPEN", "RESOLVED", "ESCALATED"]
 
@@ -28,6 +28,7 @@ class RiskAlertAdminOut(BaseModel):
     aiToolName: str | None
     promptText: str | None
     riskFindings: list[RiskFindingOut] = []
+    attachments: list[AttachmentOut] = []
 
     # Set when the employee has appealed this alert (or, for legacy data, the
     # prompt block it was merged from) — surfaced so admins reviewing the
