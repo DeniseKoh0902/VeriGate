@@ -84,3 +84,45 @@ export interface UseCasePolicyUpdateInput {
   minConfidence?: number;
   isActive?: boolean;
 }
+
+// BLOCKED tools are already an unconditional stop before any policy lookup
+// runs, so only these two tiers are meaningful to configure here.
+export type ToolTier = 'APPROVED' | 'RESTRICTED';
+
+// The matrix that replaces the old "riskTier !== APPROVED -> reject
+// everything" flat gate: what a tool *tier* is allowed to receive, broken
+// down by data category (the same category vocabulary as SensitiveDataRule).
+// A RESTRICTED tool defaults to blocking everything until a category is
+// explicitly opted in here; an APPROVED tool defaults to allowing everything
+// until a category is explicitly carved back out.
+export interface ToolTierPolicy {
+  id: string;
+  toolTier: ToolTier;
+  // null = applies to every tool in toolTier (class-level rule). Set =
+  // applies to this one tool only, overriding the class-level rule for it.
+  aiToolId: string | null;
+  aiToolName: string | null;
+  category: string;
+  riskLevel: RiskLevel;
+  action: RuleAction;
+  isActive: boolean;
+  createdById: string;
+  createdAt: string;
+}
+
+export interface ToolTierPolicyCreateInput {
+  toolTier: ToolTier;
+  aiToolId?: string | null;
+  category: string;
+  riskLevel: RiskLevel;
+  action: RuleAction;
+}
+
+export interface ToolTierPolicyUpdateInput {
+  toolTier?: ToolTier;
+  aiToolId?: string | null;
+  category?: string;
+  riskLevel?: RiskLevel;
+  action?: RuleAction;
+  isActive?: boolean;
+}

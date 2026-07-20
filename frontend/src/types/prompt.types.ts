@@ -61,4 +61,8 @@ export interface AvailableModel {
   name: string;
   trustScore: number | null;
   recommended: boolean;
+  // APPROVED = fully trusted. RESTRICTED = Pending Review, selectable only
+  // because an admin opted at least one category in via a Tool Tier Policy —
+  // individual prompts can still get blocked depending on their content.
+  riskTier: 'APPROVED' | 'RESTRICTED';
 }

@@ -6,6 +6,7 @@ export interface AiModelOption {
   name: string;
   trustScore: number | null;
   recommended?: boolean;
+  riskTier?: 'APPROVED' | 'RESTRICTED';
 }
 
 interface ModelSelectorProps {
@@ -63,6 +64,14 @@ export function ModelSelector({ models, selected, onSelect }: ModelSelectorProps
         className="flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"
       >
         <span>{selectedModel?.name ?? selected}</span>
+        {selectedModel?.riskTier === 'RESTRICTED' && (
+          <span
+            className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+            title="Pending Review — only usable for content categories an admin has explicitly allowed."
+          >
+            Restricted
+          </span>
+        )}
         {selectedModel && selectedModel.trustScore !== null && (
           <span className="text-xs font-normal text-slate-400">
             Trust {selectedModel.trustScore}
@@ -106,6 +115,14 @@ export function ModelSelector({ models, selected, onSelect }: ModelSelectorProps
                     <span className="flex items-center gap-0.5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                       <Sparkles size={9} />
                       Recommended
+                    </span>
+                  )}
+                  {model.riskTier === 'RESTRICTED' && (
+                    <span
+                      className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                      title="Pending Review — only usable for content categories an admin has explicitly allowed."
+                    >
+                      Restricted
                     </span>
                   )}
                 </span>

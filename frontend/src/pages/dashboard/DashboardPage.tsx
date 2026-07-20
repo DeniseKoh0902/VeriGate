@@ -143,6 +143,11 @@ export function DashboardPage() {
     [data?.riskDistribution],
   );
 
+  const maxDepartmentPrompts = useMemo(
+    () => Math.max(1, ...(data?.usageByDepartment ?? []).map((d) => d.promptCount)),
+    [data?.usageByDepartment],
+  );
+
   return (
     <div className="p-4 sm:p-8">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -210,6 +215,61 @@ export function DashboardPage() {
                 );
               })}
             </div>
+
+            <Card className="mt-6">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h2 className="font-semibold text-slate-900">AI Usage by Department</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Prompt volume, block rate, and tool adoption by department over the last 30 days.
+                </p>
+              </div>
+              {(data.usageByDepartment ?? []).length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-slate-400">
+                  No AI usage recorded in the last 30 days.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+                        <th className="px-5 py-2 font-medium">Department</th>
+                        <th className="px-5 py-2 font-medium">Prompt Volume</th>
+                        <th className="px-5 py-2 font-medium">Block Rate</th>
+                        <th className="px-5 py-2 font-medium">Active Users</th>
+                        <th className="px-5 py-2 font-medium">Top Tool</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.usageByDepartment.map((dept) => (
+                        <tr key={dept.department} className="border-t border-slate-100">
+                          <td className="px-5 py-3 font-medium text-slate-900">{dept.department}</td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="h-full rounded-full bg-blue-500"
+                                  style={{
+                                    width: `${(dept.promptCount / maxDepartmentPrompts) * 100}%`,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-slate-500">{dept.promptCount}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <Badge status={dept.blockRatePct >= 10 ? 'serious' : 'good'}>
+                              {dept.blockRatePct}%
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-3 text-slate-500">{dept.activeUsers}</td>
+                          <td className="px-5 py-3 text-slate-500">{dept.topTool ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
 
             <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Pagination } from '@/components/ui/Pagination';
 import * as policyService from '@/services/policy.service';
+import * as aiToolService from '@/services/aiTool.service';
 import { useToast } from '@/context/ToastContext';
 import { DEPARTMENTS } from '@/lib/departments';
 import type {
@@ -15,9 +16,13 @@ import type {
   RuleAction,
   SensitiveDataRule,
   SensitiveDataRuleCreateInput,
+  ToolTier,
+  ToolTierPolicy,
+  ToolTierPolicyCreateInput,
   UseCasePolicy,
   UseCasePolicyCreateInput,
 } from '@/types/policy.types';
+import type { AiTool } from '@/types/aiTool.types';
 
 const PAGE_SIZE = 5;
 
@@ -65,6 +70,14 @@ const emptyUseCasePolicyForm: UseCasePolicyCreateInput = {
   minConfidence: 70,
 };
 
+const emptyToolTierPolicyForm: ToolTierPolicyCreateInput = {
+  toolTier: 'RESTRICTED',
+  aiToolId: null,
+  category: '',
+  riskLevel: 'MEDIUM',
+  action: 'ALLOW',
+};
+
 type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE';
 const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 
@@ -87,6 +100,15 @@ export function PolicyManagementPage() {
   const [useCaseActionFilter, setUseCaseActionFilter] = useState<RuleAction | 'ALL'>('ALL');
   const [useCasePage, setUseCasePage] = useState(1);
 
+  const [toolTierPolicies, setToolTierPolicies] = useState<ToolTierPolicy[]>([]);
+  const [aiTools, setAiTools] = useState<AiTool[]>([]);
+  const [toolTierForm, setToolTierForm] = useState<ToolTierPolicyCreateInput | null>(null);
+  const [editingToolTierId, setEditingToolTierId] = useState<string | null>(null);
+  const [toolTierQuery, setToolTierQuery] = useState('');
+  const [toolTierTierFilter, setToolTierTierFilter] = useState<ToolTier | 'ALL'>('ALL');
+  const [toolTierActionFilter, setToolTierActionFilter] = useState<RuleAction | 'ALL'>('ALL');
+  const [toolTierPage, setToolTierPage] = useState(1);
+
   const [policyQuery, setPolicyQuery] = useState('');
   const [policyDepartmentFilter, setPolicyDepartmentFilter] = useState<string>('ALL');
   const [policySeverityFilter, setPolicySeverityFilter] = useState<string>('ALL');
@@ -101,14 +123,19 @@ export function PolicyManagementPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [policyList, ruleList, useCasePolicyList] = await Promise.all([
-        policyService.listPolicies(),
-        policyService.listSensitiveDataRules(),
-        policyService.listUseCasePolicies(),
-      ]);
+      const [policyList, ruleList, useCasePolicyList, toolTierPolicyList, aiToolList] =
+        await Promise.all([
+          policyService.listPolicies(),
+          policyService.listSensitiveDataRules(),
+          policyService.listUseCasePolicies(),
+          policyService.listToolTierPolicies(),
+          aiToolService.listAiTools(),
+        ]);
       setPolicies(policyList);
       setRules(ruleList);
       setUseCasePolicies(useCasePolicyList);
+      setToolTierPolicies(toolTierPolicyList);
+      setAiTools(aiToolList);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to load policy data.');
     } finally {
@@ -188,6 +215,39 @@ export function PolicyManagementPage() {
   useEffect(() => {
     if (useCasePage > useCaseTotalPages) setUseCasePage(useCaseTotalPages);
   }, [useCasePage, useCaseTotalPages]);
+
+  const toolTierCategorySuggestions = useMemo(
+    () => Array.from(new Set([...rules.map((r) => r.category), ...toolTierPolicies.map((p) => p.category)])),
+    [rules, toolTierPolicies],
+  );
+
+  // BLOCKED tools are already an unconditional stop before any tool-tier
+  // policy lookup runs (see prompt_service.py), so they're not a meaningful
+  // "applies to this specific tool" target here.
+  const selectableAiTools = useMemo(
+    () => aiTools.filter((tool) => tool.riskTier !== 'BLOCKED'),
+    [aiTools],
+  );
+
+  const filteredToolTierPolicies = useMemo(() => {
+    const term = toolTierQuery.trim().toLowerCase();
+    return toolTierPolicies.filter((policy) => {
+      const matchesTerm = !term || policy.category.toLowerCase().includes(term);
+      const matchesTier = toolTierTierFilter === 'ALL' || policy.toolTier === toolTierTierFilter;
+      const matchesAction = toolTierActionFilter === 'ALL' || policy.action === toolTierActionFilter;
+      return matchesTerm && matchesTier && matchesAction;
+    });
+  }, [toolTierPolicies, toolTierQuery, toolTierTierFilter, toolTierActionFilter]);
+
+  const toolTierTotalPages = Math.max(1, Math.ceil(filteredToolTierPolicies.length / PAGE_SIZE));
+  const paginatedToolTierPolicies = filteredToolTierPolicies.slice(
+    (toolTierPage - 1) * PAGE_SIZE,
+    toolTierPage * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    if (toolTierPage > toolTierTotalPages) setToolTierPage(toolTierTotalPages);
+  }, [toolTierPage, toolTierTotalPages]);
 
   const startCreatePolicy = () => {
     setEditingPolicyId(null);
@@ -317,6 +377,52 @@ export function PolicyManagementPage() {
       toast.success('Use case policy deleted.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to delete use case policy.');
+    }
+  };
+
+  const startCreateToolTierPolicy = () => {
+    setEditingToolTierId(null);
+    setToolTierForm(emptyToolTierPolicyForm);
+  };
+
+  const startEditToolTierPolicy = (policy: ToolTierPolicy) => {
+    setEditingToolTierId(policy.id);
+    setToolTierForm({
+      toolTier: policy.toolTier,
+      aiToolId: policy.aiToolId,
+      category: policy.category,
+      riskLevel: policy.riskLevel,
+      action: policy.action,
+    });
+  };
+
+  const saveToolTierPolicy = async () => {
+    if (!toolTierForm) return;
+    try {
+      if (editingToolTierId) {
+        const updated = await policyService.updateToolTierPolicy(editingToolTierId, toolTierForm);
+        setToolTierPolicies((prev) => prev.map((p) => (p.id === editingToolTierId ? updated : p)));
+        toast.success('Tool tier policy updated successfully.');
+      } else {
+        const created = await policyService.createToolTierPolicy(toolTierForm);
+        setToolTierPolicies((prev) => [created, ...prev]);
+        toast.success('Tool tier policy created successfully.');
+      }
+      setToolTierForm(null);
+      setEditingToolTierId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save tool tier policy.');
+    }
+  };
+
+  const deleteToolTierPolicy = async (id: string) => {
+    if (!window.confirm('Delete this tool tier policy?')) return;
+    try {
+      await policyService.deleteToolTierPolicy(id);
+      setToolTierPolicies((prev) => prev.filter((p) => p.id !== id));
+      toast.success('Tool tier policy deleted.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to delete tool tier policy.');
     }
   };
 
@@ -834,6 +940,229 @@ export function PolicyManagementPage() {
           currentPage={useCasePage}
           totalPages={useCaseTotalPages}
           onPageChange={setUseCasePage}
+          className="border-t border-slate-100"
+        />
+      </Card>
+
+      <Card className="mt-6">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">Tool Tier Policies</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Restricts data categories to classes of tool — e.g. "credential" data may never reach a
+              RESTRICTED-tier tool even if it's fine on an APPROVED one. Apply a rule to every tool in a
+              tier, or pick one specific tool (its current trust score is shown) to override just that
+              tool. Replaces the old all-or-nothing gate on tool tier.
+            </p>
+          </div>
+          <Button variant="secondary" className="w-auto" onClick={startCreateToolTierPolicy}>
+            <Plus size={15} />
+            Add Tool Tier Policy
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="w-72">
+            <Input
+              placeholder="Search by category"
+              leftIcon={<Search size={16} />}
+              value={toolTierQuery}
+              onChange={(e) => {
+                setToolTierQuery(e.target.value);
+                setToolTierPage(1);
+              }}
+            />
+          </div>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={toolTierTierFilter}
+            onChange={(e) => {
+              setToolTierTierFilter(e.target.value as ToolTier | 'ALL');
+              setToolTierPage(1);
+            }}
+          >
+            <option value="ALL">All Tool Tiers</option>
+            <option value="APPROVED">Approved</option>
+            <option value="RESTRICTED">Restricted</option>
+          </select>
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+            value={toolTierActionFilter}
+            onChange={(e) => {
+              setToolTierActionFilter(e.target.value as RuleAction | 'ALL');
+              setToolTierPage(1);
+            }}
+          >
+            <option value="ALL">All Actions</option>
+            <option value="ALLOW">Allow</option>
+            <option value="WARN">Warn</option>
+            <option value="SANITIZE">Sanitize</option>
+            <option value="REQUIRE_APPROVAL">Require Approval</option>
+            <option value="BLOCK">Block</option>
+          </select>
+        </div>
+
+        {toolTierForm && (
+          <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4 sm:grid-cols-2 lg:grid-cols-5">
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={toolTierForm.aiToolId ? `TOOL:${toolTierForm.aiToolId}` : `TIER:${toolTierForm.toolTier}`}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.startsWith('TOOL:')) {
+                  const toolId = value.slice('TOOL:'.length);
+                  const tool = selectableAiTools.find((t) => t.id === toolId);
+                  if (tool) {
+                    setToolTierForm({
+                      ...toolTierForm,
+                      aiToolId: tool.id,
+                      toolTier: tool.riskTier as ToolTier,
+                    });
+                  }
+                } else {
+                  setToolTierForm({
+                    ...toolTierForm,
+                    aiToolId: null,
+                    toolTier: value.slice('TIER:'.length) as ToolTier,
+                  });
+                }
+              }}
+            >
+              <optgroup label="All tools in a tier">
+                <option value="TIER:RESTRICTED">All Restricted tools</option>
+                <option value="TIER:APPROVED">All Approved tools</option>
+              </optgroup>
+              <optgroup label="Specific tool">
+                {selectableAiTools.map((tool) => (
+                  <option key={tool.id} value={`TOOL:${tool.id}`}>
+                    {tool.name} ({titleCase(tool.riskTier)}
+                    {tool.overallScore !== null ? `, score ${tool.overallScore}` : ''})
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <div>
+              <Input
+                placeholder="Category (e.g. Credential) — matches Sensitive Data Rule categories"
+                list="tool-tier-category-suggestions"
+                value={toolTierForm.category}
+                onChange={(e) => setToolTierForm({ ...toolTierForm, category: e.target.value })}
+              />
+              <datalist id="tool-tier-category-suggestions">
+                <option value="General" />
+                {toolTierCategorySuggestions.map((category) => (
+                  <option key={category} value={category} />
+                ))}
+              </datalist>
+            </div>
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={toolTierForm.riskLevel}
+              onChange={(e) =>
+                setToolTierForm({ ...toolTierForm, riskLevel: e.target.value as RiskLevel })
+              }
+            >
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+              <option value="CRITICAL">Critical</option>
+            </select>
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-700"
+              value={toolTierForm.action}
+              onChange={(e) =>
+                setToolTierForm({ ...toolTierForm, action: e.target.value as RuleAction })
+              }
+            >
+              <option value="ALLOW">Allow</option>
+              <option value="WARN">Warn</option>
+              <option value="SANITIZE">Sanitize</option>
+              <option value="REQUIRE_APPROVAL">Require Approval</option>
+              <option value="BLOCK">Block</option>
+            </select>
+            <div className="flex gap-2">
+              <Button
+                className="w-auto"
+                onClick={saveToolTierPolicy}
+                disabled={!toolTierForm.category}
+              >
+                Save
+              </Button>
+              <Button variant="ghost" className="w-auto" onClick={() => setToolTierForm(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="px-5 py-2 font-medium">Applies To</th>
+              <th className="px-5 py-2 font-medium">Category</th>
+              <th className="px-5 py-2 font-medium">Risk Level</th>
+              <th className="px-5 py-2 font-medium">Action</th>
+              <th className="px-5 py-2 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!isLoading && paginatedToolTierPolicies.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
+                  {toolTierPolicies.length === 0
+                    ? 'No tool tier policies yet — add one to get started.'
+                    : 'No tool tier policies match your search/filter.'}
+                </td>
+              </tr>
+            )}
+            {paginatedToolTierPolicies.map((policy) => (
+              <tr key={policy.id} className="border-t border-slate-100">
+                <td className="px-5 py-3">
+                  <div className="font-medium text-slate-900">
+                    {policy.aiToolName ?? `All ${titleCase(policy.toolTier)} tools`}
+                  </div>
+                  {policy.aiToolName && (
+                    <div className="mt-0.5 text-xs text-slate-500">{titleCase(policy.toolTier)} tier</div>
+                  )}
+                </td>
+                <td className="px-5 py-3 text-slate-700">{policy.category}</td>
+                <td className="px-5 py-3">
+                  <Badge status={riskLevelBadge[policy.riskLevel]}>
+                    {titleCase(policy.riskLevel)}
+                  </Badge>
+                </td>
+                <td className="px-5 py-3">
+                  <Badge status={actionBadge[policy.action]}>{titleCase(policy.action)}</Badge>
+                </td>
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-3 text-slate-400">
+                    <button
+                      aria-label="Edit tool tier policy"
+                      className="hover:text-slate-700"
+                      onClick={() => startEditToolTierPolicy(policy)}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      aria-label="Delete tool tier policy"
+                      className="hover:text-red-600"
+                      onClick={() => deleteToolTierPolicy(policy.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+
+        <Pagination
+          currentPage={toolTierPage}
+          totalPages={toolTierTotalPages}
+          onPageChange={setToolTierPage}
           className="border-t border-slate-100"
         />
       </Card>
