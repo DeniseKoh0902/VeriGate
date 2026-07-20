@@ -277,11 +277,11 @@ export function MyComplianceOverviewPage() {
             const isExpanded = expandedIds.has(record.id);
             return (
             <div key={record.id} className="px-5 py-4 transition-colors hover:bg-slate-50">
-              <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => toggleExpanded(record.id)}
-                  className="flex flex-1 items-start gap-2 text-left"
+                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
                 >
                   <ChevronDown
                     size={16}
@@ -290,14 +290,14 @@ export function MyComplianceOverviewPage() {
                       isExpanded && 'rotate-180',
                     )}
                   />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{record.title}</p>
-                    <p className="text-xs text-slate-400">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-900">{record.title}</p>
+                    <p className="break-words text-xs text-slate-400">
                       {record.policy ?? 'No policy on record'} · {formatRecordDate(record.date)}
                     </p>
                   </div>
                 </button>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-3">
                   <Badge status={flagStatusBadge[record.flagStatus]}>
                     {flagStatusLabel[record.flagStatus]}
                   </Badge>
