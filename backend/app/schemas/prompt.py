@@ -64,3 +64,7 @@ class AvailableModelOut(BaseModel):
     name: str
     trustScore: int | None
     recommended: bool
+    # APPROVED = fully trusted. RESTRICTED = Pending Review, selectable only
+    # because an admin opted at least one category in via a Tool Tier
+    # Policy — individual prompts can still get BLOCKed depending on content.
+    riskTier: str

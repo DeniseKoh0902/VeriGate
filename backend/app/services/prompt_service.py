@@ -15,6 +15,7 @@ from app.repositories import (
     prompt_repository,
     risk_alert_repository,
     sensitive_data_rule_repository,
+    tool_tier_policy_repository,
     use_case_policy_repository,
     user_repository,
 )
@@ -58,9 +59,16 @@ async def generate_ai_response(prompt_text: str) -> str:
 
 async def list_available_models() -> list[AvailableModelOut]:
     pool = get_pool()
-    rows = await ai_tool_repository.list_approved_tools(pool)
+    rows = await ai_tool_repository.list_selectable_tools(pool)
     return [
-        AvailableModelOut(name=row["name"], trustScore=row["overallScore"], recommended=index == 0)
+        AvailableModelOut(
+            name=row["name"],
+            trustScore=row["overallScore"],
+            # Only ever recommend a fully-trusted tool — a RESTRICTED one is
+            # merely partially usable, never the best default pick.
+            recommended=index == 0 and row["riskTier"] == "APPROVED",
+            riskTier=row["riskTier"],
+        )
         for index, row in enumerate(rows)
     ]
 
@@ -69,12 +77,19 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     pool = get_pool()
 
     ai_tool = await ai_tool_repository.get_or_create_ai_tool_by_name(pool, payload.aiToolName)
+    tool_tier = ai_tool["riskTier"]
 
-    if ai_tool["riskTier"] != "APPROVED":
+    # BLOCKED is still an unconditional stop — no category of data should
+    # ever reach a tool governance has actively rejected, so this short-
+    # circuits before a session/prompt row is even created. APPROVED and
+    # RESTRICTED both now flow into the detection pipeline below, where the
+    # tool-tier x data-category matrix (see "tier_action" further down)
+    # decides per-category rather than gating the whole tool at once.
+    if tool_tier == "BLOCKED":
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
             detail=(
-                f'"{payload.aiToolName}" is not an approved AI tool. '
+                f'"{payload.aiToolName}" has been blocked. '
                 "Submit an AI Tool Request to get it reviewed."
             ),
         )
@@ -94,6 +109,54 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
     active_rules = await sensitive_data_rule_repository.list_active_rules(pool)
     matches = detection_service.detect(payload.promptText, active_rules)
     action = detection_service.resolve_action(matches)
+
+    # The tool-tier x data-category matrix: riskTier alone used to be a single
+    # flat gate (APPROVED or rejected outright). Now it's a third input into
+    # the same most_restrictive() reduction as sensitive-data/use-case
+    # actions, keyed by which data categories were actually detected —
+    # "GENERAL" stands in for a prompt with no sensitive-data match at all,
+    # so admins can still explicitly allow plain small talk through a
+    # RESTRICTED tool without opening it up to every category.
+    #
+    # Defaults are chosen so existing installs with zero ToolTierPolicy rows
+    # behave exactly as before: APPROVED tools stay fully open, RESTRICTED
+    # tools stay fully blocked, until an admin opts specific categories in
+    # (RESTRICTED) or carves specific categories back out (APPROVED).
+    #
+    # Policies can be scoped to a specific tool (aiToolId set) or to every
+    # tool in a tier (aiToolId null) — a specific-tool rule always wins over
+    # a tier-generic one for the same category, since it's the more precise
+    # signal (e.g. "ChatGPT specifically can't see source code" even though
+    # RESTRICTED tools in general are allowed to).
+    tier_policies = await tool_tier_policy_repository.list_active_policies_for_tool(
+        pool, ai_tool["id"], tool_tier
+    )
+    specific_policy_by_category = {
+        p["category"].lower(): p for p in tier_policies if p["aiToolId"] is not None
+    }
+    generic_policy_by_category = {
+        p["category"].lower(): p for p in tier_policies if p["aiToolId"] is None
+    }
+    content_categories = {m.category.lower() for m in matches} or {"general"}
+    matched_tier_policies = [
+        specific_policy_by_category.get(category) or generic_policy_by_category[category]
+        for category in content_categories
+        if category in specific_policy_by_category or category in generic_policy_by_category
+    ]
+
+    if matched_tier_policies:
+        tier_action = detection_service.most_restrictive(
+            [policy["action"] for policy in matched_tier_policies]
+        )
+    elif tool_tier == "APPROVED":
+        tier_action = "ALLOW"
+    else:
+        tier_action = "BLOCK"
+
+    matched_tier_policy = next(
+        (policy for policy in matched_tier_policies if policy["action"] == tier_action), None
+    )
+    action = detection_service.most_restrictive([action, tier_action])
 
     # Sensitive-data detection above answers "does this prompt contain
     # sensitive data?" — this answers the separate question "what decision is
@@ -184,23 +247,59 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
             ),
         )
 
+    if matched_tier_policy is not None:
+        await prompt_repository.create_prompt_risk_finding(
+            pool,
+            prompt_id=prompt["id"],
+            rule_id=None,
+            category=matched_tier_policy["category"],
+            risk_level=matched_tier_policy["riskLevel"],
+            note=(
+                f'Matched Tool Tier Policy — "{matched_tier_policy["category"]}" data on a '
+                f'{tool_tier} tool.'
+            ),
+        )
+
     if action in ("BLOCK", "REQUIRE_APPROVAL"):
-        # A use-case match takes precedence for the alert's headline reason
-        # since it's the more specific signal — a sensitive-data match may
-        # have also fired here but be incidental to why this got flagged.
+        # Priority for the alert's headline reason: a use-case match is the
+        # most specific signal, then an explicit tier-policy match, then a
+        # plain sensitive-data match. If none of those fired but the tool
+        # tier itself defaulted to BLOCK (a RESTRICTED tool with no opt-in
+        # policy for this content), fall back to that — the same reason the
+        # old flat gate gave, just now carrying a full audit trail.
         if matched_use_case is not None:
             alert_type = matched_use_case["useCase"]
             severity = matched_use_case["riskLevel"]
             verb = "held for approval" if action == "REQUIRE_APPROVAL" else "blocked"
             description = f'Prompt {verb} by Use Case Policy "{matched_use_case["useCase"]}".'
-        else:
-            alert_type = matches[0].category if matches else "Policy Violation"
-            severity = matches[0].risk_level if matches else "HIGH"
-            description = (
-                f'Prompt blocked by Sensitive Data Rule "{matches[0].category}".'
-                if matches
-                else "Prompt blocked by governance policy."
+        elif matched_tier_policy is not None:
+            verb = "held for approval" if action == "REQUIRE_APPROVAL" else "blocked"
+            alert_type = matched_tier_policy["category"]
+            severity = matched_tier_policy["riskLevel"]
+            scope = (
+                f'"{payload.aiToolName}" specifically'
+                if matched_tier_policy["aiToolId"] is not None
+                else f"{tool_tier} tools"
             )
+            description = (
+                f'Prompt {verb} by Tool Tier Policy — "{matched_tier_policy["category"]}" data is not '
+                f"permitted on {scope}."
+            )
+        elif matches:
+            alert_type = matches[0].category
+            severity = matches[0].risk_level
+            description = f'Prompt blocked by Sensitive Data Rule "{matches[0].category}".'
+        elif tier_action == "BLOCK" and tool_tier != "APPROVED":
+            alert_type = "Unapproved AI Tool"
+            severity = "HIGH"
+            description = (
+                f'"{payload.aiToolName}" is a {tool_tier.lower()} AI tool with no Tool Tier Policy '
+                "permitting this content. Submit an AI Tool Request to get it fully reviewed."
+            )
+        else:
+            alert_type = "Policy Violation"
+            severity = "HIGH"
+            description = "Prompt blocked by governance policy."
 
         alert_row = await risk_alert_repository.create_risk_alert(
             pool,
@@ -260,6 +359,14 @@ async def submit_prompt(payload: PromptSubmitRequest, user_id: str) -> PromptSub
                 category=matched_use_case["useCase"],
                 riskLevel=matched_use_case["riskLevel"],
                 note=f"Use case intent match (confidence {intent.confidence}%).",
+            )
+        )
+    if matched_tier_policy is not None:
+        risk_findings.append(
+            RiskFindingOut(
+                category=matched_tier_policy["category"],
+                riskLevel=matched_tier_policy["riskLevel"],
+                note=f"Tool tier policy match ({tool_tier} tier).",
             )
         )
 

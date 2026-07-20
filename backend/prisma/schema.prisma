@@ -119,6 +119,7 @@ model User {
   notifications           Notification[]
   sensitiveDataRules      SensitiveDataRule[]
   useCasePolicies         UseCasePolicy[]
+  toolTierPolicies        ToolTierPolicy[]
   policiesCreated         Policy[]
   recommendationsReviewed PolicyRecommendation[]
   governanceCopilotSessions GovernanceCopilotSession[]
@@ -151,6 +152,7 @@ model AiTool {
   sessions          AiSession[]
   fulfilledRequests AiToolRequest[]
   usageScans        AiToolUsageScan[]
+  tierPolicies      ToolTierPolicy[]
 
   @@map("ai_tools")
 }
@@ -303,6 +305,36 @@ model UseCasePolicy {
   createdAt     DateTime   @default(now())
 
   @@map("use_case_policies")
+}
+
+// The matrix Challenge 2 needs and the flat AiTool.riskTier gate in
+// prompt_service doesn't provide on its own: what a given tool *tier* is
+// allowed to receive, broken down by data category. A RESTRICTED tool no
+// longer means "blocked outright" — it means "subject to these per-category
+// rules", so e.g. small-talk can still go to a RESTRICTED tool while
+// "credential" or "source code" categories still get BLOCKed for that tier.
+// category free-text matches the same vocabulary as SensitiveDataRule.category
+// (both ultimately compared against detection_service's category matches).
+//
+// aiToolId is optional: null means "applies to every tool in this tier"
+// (the class-level rule); set means "applies to this one tool specifically",
+// overriding the tier-level rule for that tool/category pair — e.g. carve
+// out "ChatGPT can't receive source code" even though other RESTRICTED tools
+// can, per a tier-level rule that allows it.
+model ToolTierPolicy {
+  id          String         @id @default(uuid())
+  toolTier    AiToolRiskTier
+  aiToolId    String?
+  aiTool      AiTool?        @relation(fields: [aiToolId], references: [id])
+  category    String
+  riskLevel   RiskLevel
+  action      RuleAction
+  isActive    Boolean        @default(true)
+  createdById String
+  createdBy   User           @relation(fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now())
+
+  @@map("tool_tier_policies")
 }
 
 model Policy {

@@ -8,6 +8,7 @@ from app.repositories import (
     notification_repository,
     policy_repository,
     sensitive_data_rule_repository,
+    tool_tier_policy_repository,
     use_case_policy_repository,
     user_repository,
 )
@@ -18,6 +19,9 @@ from app.schemas.policy import (
     SensitiveDataRuleCreate,
     SensitiveDataRuleOut,
     SensitiveDataRuleUpdate,
+    ToolTierPolicyCreate,
+    ToolTierPolicyOut,
+    ToolTierPolicyUpdate,
     UseCasePolicyCreate,
     UseCasePolicyOut,
     UseCasePolicyUpdate,
@@ -53,6 +57,18 @@ def _use_case_policy_snapshot(row) -> str:
             "riskLevel": row["riskLevel"],
             "ruleAction": row["action"],
             "minConfidence": row["minConfidence"],
+        }
+    )
+
+
+def _tool_tier_policy_snapshot(row) -> str:
+    return json.dumps(
+        {
+            "toolTier": row["toolTier"],
+            "aiToolName": row["aiToolName"],
+            "category": row["category"],
+            "riskLevel": row["riskLevel"],
+            "ruleAction": row["action"],
         }
     )
 
@@ -325,4 +341,85 @@ async def delete_use_case_policy(policy_id: str, actor_id: str) -> None:
         entity_type="UseCasePolicy",
         entity_id=policy_id,
         snapshot=_use_case_policy_snapshot(policy) if policy else None,
+    )
+
+
+async def list_tool_tier_policies() -> list[ToolTierPolicyOut]:
+    pool = get_pool()
+    rows = await tool_tier_policy_repository.list_tool_tier_policies(pool)
+    return [ToolTierPolicyOut(**dict(row)) for row in rows]
+
+
+async def create_tool_tier_policy(
+    payload: ToolTierPolicyCreate, created_by_id: str
+) -> ToolTierPolicyOut:
+    pool = get_pool()
+    row = await tool_tier_policy_repository.create_tool_tier_policy(
+        pool,
+        tool_tier=payload.toolTier,
+        ai_tool_id=payload.aiToolId,
+        category=payload.category,
+        risk_level=payload.riskLevel,
+        action=payload.action,
+        created_by_id=created_by_id,
+    )
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=created_by_id,
+        action="Tool Tier Policy Created",
+        entity_type="ToolTierPolicy",
+        entity_id=row["id"],
+        snapshot=_tool_tier_policy_snapshot(row),
+    )
+
+    return ToolTierPolicyOut(**dict(row))
+
+
+async def update_tool_tier_policy(
+    policy_id: str, payload: ToolTierPolicyUpdate, actor_id: str
+) -> ToolTierPolicyOut:
+    pool = get_pool()
+    row = await tool_tier_policy_repository.update_tool_tier_policy(
+        pool,
+        policy_id,
+        tool_tier=payload.toolTier,
+        ai_tool_id=payload.aiToolId,
+        category=payload.category,
+        risk_level=payload.riskLevel,
+        action=payload.action,
+        is_active=payload.isActive,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool tier policy not found.")
+
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action="Tool Tier Policy Updated",
+        entity_type="ToolTierPolicy",
+        entity_id=policy_id,
+        snapshot=_tool_tier_policy_snapshot(row),
+    )
+
+    return ToolTierPolicyOut(**dict(row))
+
+
+async def delete_tool_tier_policy(policy_id: str, actor_id: str) -> None:
+    pool = get_pool()
+    # Fetched before deletion (via the joined admin select, since the
+    # snapshot below includes aiToolName) — see delete_policy for why.
+    policy = await tool_tier_policy_repository.get_admin_policy_by_id(pool, policy_id)
+    deleted = await tool_tier_policy_repository.delete_tool_tier_policy(pool, policy_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool tier policy not found.")
+
+    category = policy["category"] if policy else policy_id
+    await audit_log_repository.create_audit_log(
+        pool,
+        user_id=actor_id,
+        action=f'Tool Tier Policy Removed: "{category}"',
+        entity_type="ToolTierPolicy",
+        entity_id=policy_id,
+        snapshot=_tool_tier_policy_snapshot(policy) if policy else None,
     )

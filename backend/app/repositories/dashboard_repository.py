@@ -115,6 +115,55 @@ async def get_top_trust_scores(pool: asyncpg.Pool, *, limit: int) -> list[asyncp
         )
 
 
+async def get_usage_by_department(pool: asyncpg.Pool, *, days: int) -> list[asyncpg.Record]:
+    """Prompt volume, block rate, active-user count, and most-used tool per
+    department over the trailing `days`-day window — the department axis
+    Prompt/AiSession don't carry directly, so this joins through to Users the
+    same way governance_copilot_repository.get_department_alert_stats does,
+    but scoped to overall usage rather than just alerts."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            WITH dept_stats AS (
+                SELECT
+                    u."department" AS department,
+                    COUNT(*) AS "promptCount",
+                    COUNT(*) FILTER (WHERE p."status" = 'BLOCKED') AS "blockedCount",
+                    COUNT(DISTINCT u."id") AS "activeUsers"
+                FROM "prompts" p
+                JOIN "ai_sessions" s ON s."id" = p."sessionId"
+                JOIN "users" u ON u."id" = s."userId"
+                WHERE p."createdAt" >= NOW() - make_interval(days => $1)
+                GROUP BY u."department"
+            ),
+            top_tool_ranked AS (
+                SELECT
+                    u."department" AS department,
+                    t."name" AS tool_name,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY u."department" ORDER BY COUNT(*) DESC
+                    ) AS rn
+                FROM "prompts" p
+                JOIN "ai_sessions" s ON s."id" = p."sessionId"
+                JOIN "users" u ON u."id" = s."userId"
+                JOIN "ai_tools" t ON t."id" = s."aiToolId"
+                WHERE p."createdAt" >= NOW() - make_interval(days => $1)
+                GROUP BY u."department", t."name"
+            )
+            SELECT
+                d.department,
+                d."promptCount",
+                d."blockedCount",
+                d."activeUsers",
+                tt.tool_name AS "topTool"
+            FROM dept_stats d
+            LEFT JOIN top_tool_ranked tt ON tt.department = d.department AND tt.rn = 1
+            ORDER BY d."promptCount" DESC
+            """,
+            days,
+        )
+
+
 async def list_recent_ai_tools(pool: asyncpg.Pool, *, limit: int) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         return await conn.fetch(

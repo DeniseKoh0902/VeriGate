@@ -6,6 +6,9 @@ import type {
   SensitiveDataRule,
   SensitiveDataRuleCreateInput,
   SensitiveDataRuleUpdateInput,
+  ToolTierPolicy,
+  ToolTierPolicyCreateInput,
+  ToolTierPolicyUpdateInput,
   UseCasePolicy,
   UseCasePolicyCreateInput,
   UseCasePolicyUpdateInput,
@@ -69,4 +72,26 @@ export function updateUseCasePolicy(id: string, input: UseCasePolicyUpdateInput)
 
 export function deleteUseCasePolicy(id: string) {
   return apiFetch<void>(`/policies/use-case-policies/${id}`, { method: 'DELETE' });
+}
+
+export function listToolTierPolicies() {
+  return apiFetch<ToolTierPolicy[]>('/policies/tool-tier-policies');
+}
+
+export function createToolTierPolicy(input: ToolTierPolicyCreateInput) {
+  return apiFetch<ToolTierPolicy>('/policies/tool-tier-policies', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateToolTierPolicy(id: string, input: ToolTierPolicyUpdateInput) {
+  return apiFetch<ToolTierPolicy>(`/policies/tool-tier-policies/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteToolTierPolicy(id: string) {
+  return apiFetch<void>(`/policies/tool-tier-policies/${id}`, { method: 'DELETE' });
 }

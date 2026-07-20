@@ -8,6 +8,9 @@ from app.schemas.policy import (
     SensitiveDataRuleCreate,
     SensitiveDataRuleOut,
     SensitiveDataRuleUpdate,
+    ToolTierPolicyCreate,
+    ToolTierPolicyOut,
+    ToolTierPolicyUpdate,
     UseCasePolicyCreate,
     UseCasePolicyOut,
     UseCasePolicyUpdate,
@@ -91,6 +94,39 @@ async def delete_use_case_policy(
     policy_id: str, current_user: UserOut = Depends(_require_admin)
 ) -> None:
     await policy_service.delete_use_case_policy(policy_id, current_user.id)
+
+
+@router.get("/tool-tier-policies", response_model=list[ToolTierPolicyOut])
+async def get_tool_tier_policies() -> list[ToolTierPolicyOut]:
+    return await policy_service.list_tool_tier_policies()
+
+
+@router.post(
+    "/tool-tier-policies",
+    response_model=ToolTierPolicyOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_tool_tier_policy(
+    payload: ToolTierPolicyCreate,
+    current_user: UserOut = Depends(_require_admin),
+) -> ToolTierPolicyOut:
+    return await policy_service.create_tool_tier_policy(payload, current_user.id)
+
+
+@router.patch("/tool-tier-policies/{policy_id}", response_model=ToolTierPolicyOut)
+async def update_tool_tier_policy(
+    policy_id: str,
+    payload: ToolTierPolicyUpdate,
+    current_user: UserOut = Depends(_require_admin),
+) -> ToolTierPolicyOut:
+    return await policy_service.update_tool_tier_policy(policy_id, payload, current_user.id)
+
+
+@router.delete("/tool-tier-policies/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tool_tier_policy(
+    policy_id: str, current_user: UserOut = Depends(_require_admin)
+) -> None:
+    await policy_service.delete_tool_tier_policy(policy_id, current_user.id)
 
 
 @router.get("", response_model=list[PolicyOut])

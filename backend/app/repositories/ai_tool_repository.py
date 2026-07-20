@@ -101,6 +101,31 @@ async def list_approved_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         )
 
 
+async def list_selectable_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Tools AI Workspace should let an employee pick from: every APPROVED
+    tool, plus RESTRICTED (Pending Review) tools that have at least one
+    active Tool Tier Policy opting them in for some category — otherwise a
+    RESTRICTED tool with zero policies is still a dead end (every prompt to
+    it gets BLOCKed by prompt_service's default-deny), so there's no point
+    surfacing it as selectable. APPROVED tools sort first so "recommended"
+    (index 0) never lands on a merely-partially-usable RESTRICTED tool."""
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            f"""{_LIST_SELECT}
+            WHERE t."riskTier" = 'APPROVED'
+               OR (
+                 t."riskTier" = 'RESTRICTED'
+                 AND EXISTS (
+                   SELECT 1 FROM "tool_tier_policies" p
+                   WHERE p."isActive" = true
+                     AND (p."aiToolId" = t."id" OR (p."aiToolId" IS NULL AND p."toolTier" = 'RESTRICTED'))
+                 )
+               )
+            ORDER BY (t."riskTier" = 'APPROVED') DESC, e."overallScore" DESC NULLS LAST, t."name"
+            """
+        )
+
+
 async def get_ai_tool(pool: asyncpg.Pool, tool_id: str) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         return await conn.fetchrow(f'{_LIST_SELECT} WHERE t."id" = $1', tool_id)

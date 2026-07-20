@@ -46,6 +46,15 @@ class AiToolStatusOut(BaseModel):
     riskTier: AiToolRiskTier
 
 
+class DepartmentUsageOut(BaseModel):
+    department: str
+    promptCount: int
+    blockedCount: int
+    blockRatePct: float
+    activeUsers: int
+    topTool: str | None
+
+
 class DashboardOverviewOut(BaseModel):
     statTiles: list[StatTileOut]
     recentAlerts: list[DashboardAlertOut]
@@ -53,3 +62,4 @@ class DashboardOverviewOut(BaseModel):
     complianceScore: ComplianceScoreOut
     trustScores: list[TrustScoreSummaryOut]
     recentAiTools: list[AiToolStatusOut]
+    usageByDepartment: list[DepartmentUsageOut]

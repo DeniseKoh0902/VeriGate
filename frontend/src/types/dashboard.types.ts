@@ -42,6 +42,15 @@ export interface AiToolStatus {
   riskTier: AiToolRiskTier;
 }
 
+export interface DepartmentUsage {
+  department: string;
+  promptCount: number;
+  blockedCount: number;
+  blockRatePct: number;
+  activeUsers: number;
+  topTool: string | null;
+}
+
 export interface DashboardOverview {
   statTiles: StatTile[];
   recentAlerts: DashboardAlert[];
@@ -49,4 +58,5 @@ export interface DashboardOverview {
   complianceScore: ComplianceScore;
   trustScores: TrustScoreSummary[];
   recentAiTools: AiToolStatus[];
+  usageByDepartment: DepartmentUsage[];
 }

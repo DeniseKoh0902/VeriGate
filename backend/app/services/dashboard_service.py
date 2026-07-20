@@ -5,6 +5,7 @@ from app.schemas.dashboard import (
     ComplianceScoreOut,
     DashboardAlertOut,
     DashboardOverviewOut,
+    DepartmentUsageOut,
     RiskDistributionSegmentOut,
     StatTileOut,
     TrustScoreSummaryOut,
@@ -48,6 +49,9 @@ async def get_overview() -> DashboardOverviewOut:
     compliance_row = await dashboard_repository.get_compliance_score(pool)
     trust_rows = await dashboard_repository.get_top_trust_scores(pool, limit=_TRUST_SCORE_LIMIT)
     tool_rows = await dashboard_repository.list_recent_ai_tools(pool, limit=_RECENT_TOOLS_LIMIT)
+    department_rows = await dashboard_repository.get_usage_by_department(
+        pool, days=_DISTRIBUTION_LOOKBACK_DAYS
+    )
 
     total_trend = [float(row["total"]) for row in daily]
     blocked_trend = [float(row["blocked"]) for row in daily]
@@ -107,6 +111,20 @@ async def get_overview() -> DashboardOverviewOut:
     trust_scores = [TrustScoreSummaryOut(**dict(row)) for row in trust_rows]
     recent_ai_tools = [AiToolStatusOut(**dict(row)) for row in tool_rows]
 
+    usage_by_department = [
+        DepartmentUsageOut(
+            department=row["department"],
+            promptCount=row["promptCount"],
+            blockedCount=row["blockedCount"],
+            blockRatePct=_safe_pct(row["blockedCount"], row["promptCount"])
+            if row["promptCount"] > 0
+            else 0.0,
+            activeUsers=row["activeUsers"],
+            topTool=row["topTool"],
+        )
+        for row in department_rows
+    ]
+
     return DashboardOverviewOut(
         statTiles=stat_tiles,
         recentAlerts=recent_alerts,
@@ -114,4 +132,5 @@ async def get_overview() -> DashboardOverviewOut:
         complianceScore=compliance_score,
         trustScores=trust_scores,
         recentAiTools=recent_ai_tools,
+        usageByDepartment=usage_by_department,
     )
