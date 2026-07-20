@@ -1,0 +1,66 @@
+{
+  "manifest_version": 3,
+  "name": "VeriGate Shadow AI Monitor",
+  "version": "1.0.0",
+  "description": "Warns employees and reports to VeriGate when an AI tool is used outside company governance.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost:8001/*",
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://*.chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://*.gemini.google.com/*",
+    "https://bard.google.com/*",
+    "https://*.bard.google.com/*",
+    "https://claude.ai/*",
+    "https://*.claude.ai/*",
+    "https://perplexity.ai/*",
+    "https://*.perplexity.ai/*",
+    "https://copilot.microsoft.com/*",
+    "https://*.copilot.microsoft.com/*",
+    "https://poe.com/*",
+    "https://*.poe.com/*",
+    "https://character.ai/*",
+    "https://*.character.ai/*",
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://*.chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://*.gemini.google.com/*",
+        "https://bard.google.com/*",
+        "https://*.bard.google.com/*",
+        "https://claude.ai/*",
+        "https://*.claude.ai/*",
+        "https://perplexity.ai/*",
+        "https://*.perplexity.ai/*",
+        "https://copilot.microsoft.com/*",
+        "https://*.copilot.microsoft.com/*",
+        "https://poe.com/*",
+        "https://*.poe.com/*",
+        "https://character.ai/*",
+        "https://*.character.ai/*",
+        "https://huggingface.co/*",
+        "https://*.huggingface.co/*"
+      ],
+      "js": ["constants.js", "content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "VeriGate Shadow AI Monitor"
+  }
+}

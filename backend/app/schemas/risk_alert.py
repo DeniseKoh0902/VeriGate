@@ -1,12 +1,19 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.appeal import AppealResolution, AppealStatus
 from app.schemas.common import UtcDatetime
 from app.schemas.prompt import RiskFindingOut
 
 RiskAlertStatus = Literal["OPEN", "RESOLVED", "ESCALATED"]
+
+
+class ShadowAiDetectionCreate(BaseModel):
+    # Reported by the browser extension when an employee visits an AI tool
+    # site outside VeriGate's own prompt pipeline (e.g. chatgpt.com directly).
+    domain: str = Field(min_length=1, max_length=255)
+    pageUrl: str = Field(min_length=1, max_length=2048)
 
 
 class RiskAlertAdminOut(BaseModel):
