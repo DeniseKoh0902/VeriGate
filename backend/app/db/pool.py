@@ -9,12 +9,9 @@ async def connect_pool() -> None:
     global _pool
     if _pool is None:
         settings = get_settings()
-        # Using DIRECT_URL rather than the pooled DATABASE_URL: this project's
-        # Supavisor pooler currently rejects the pooled connection string
-        # ("tenant/user not found") even though the credentials are valid — the
-        # direct connection works fine and is adequate for a single backend
-        # instance. Revisit DATABASE_URL if this needs to scale to more
-        # concurrent connections than Postgres's direct connection limit allows.
+        # Use Supabase pooled DATABASE_URL for Render runtime.
+        # The Supabase pooler endpoint is designed for hosted environments
+        # and avoids direct database connectivity issues.
         _pool = await asyncpg.create_pool(
             dsn=settings.database_url,
             statement_cache_size=0,
