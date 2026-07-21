@@ -2,6 +2,11 @@
 
 Hackathon project for Case Study 3 (AI Governance & Responsible AI in Enterprise).
 
+## Author
+**Team K&K**
+- Khor Cheng Hooi
+- Denise Koh Wei Sin
+
 ## Stack
 
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + React Router
