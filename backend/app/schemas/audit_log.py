@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 
 from app.schemas.common import UtcDatetime
-from app.schemas.prompt import RiskFindingOut
+from app.schemas.prompt import AttachmentOut, RiskFindingOut
 
 
 class AuditLogOut(BaseModel):
@@ -33,6 +33,7 @@ class AuditLogDetailOut(AuditLogOut):
     sanitizedText: str | None = None
     responseText: str | None = None
     riskFindings: list[RiskFindingOut] = []
+    attachments: list[AttachmentOut] = []
 
     # Appeal
     justification: str | None = None

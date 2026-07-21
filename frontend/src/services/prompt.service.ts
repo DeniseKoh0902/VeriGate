@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/apiClient';
+import { apiFetch, apiFetchObjectUrl } from '@/lib/apiClient';
 import type {
   AvailableModel,
   ChatSession,
@@ -8,10 +8,24 @@ import type {
 } from '@/types/prompt.types';
 
 export function submitPrompt(input: PromptSubmitInput) {
+  const form = new FormData();
+  form.append('aiToolName', input.aiToolName);
+  form.append('promptText', input.promptText);
+  if (input.sessionId) {
+    form.append('sessionId', input.sessionId);
+  }
+  for (const file of input.files ?? []) {
+    form.append('files', file);
+  }
+
   return apiFetch<PromptSubmitResult>('/prompts', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: form,
   });
+}
+
+export function getAttachmentUrl(attachmentId: string) {
+  return apiFetchObjectUrl(`/prompts/attachments/${attachmentId}`);
 }
 
 export function getAvailableModels() {

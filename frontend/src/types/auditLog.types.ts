@@ -1,4 +1,5 @@
 import type { ComplianceRiskFinding } from '@/types/compliance.types';
+import type { PromptAttachment } from '@/types/prompt.types';
 
 export interface AuditLog {
   id: string;
@@ -18,6 +19,7 @@ export interface AuditLogDetail extends AuditLog {
   sanitizedText: string | null;
   responseText: string | null;
   riskFindings: ComplianceRiskFinding[];
+  attachments: PromptAttachment[];
 
   // Appeal
   justification: string | null;

@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
+import { AttachmentPreview } from '@/components/AttachmentPreview';
 import { cn } from '@/lib/cn';
 import * as auditLogService from '@/services/auditLog.service';
 import type { AuditLog, AuditLogDetail } from '@/types/auditLog.types';
@@ -247,6 +248,15 @@ function AuditLogDetailContent({ detail }: { detail: AuditLogDetail }) {
               >
                 {finding.category} · {finding.riskLevel}
               </span>
+            ))}
+          </div>
+        </DetailField>
+      )}
+      {detail.attachments.length > 0 && (
+        <DetailField label="Attachments">
+          <div className="flex flex-wrap gap-2">
+            {detail.attachments.map((attachment) => (
+              <AttachmentPreview key={attachment.id} attachment={attachment} />
             ))}
           </div>
         </DetailField>

@@ -3,6 +3,7 @@ import type {
   AppealStatus,
   ComplianceRiskFinding,
 } from '@/types/compliance.types';
+import type { PromptAttachment } from '@/types/prompt.types';
 
 export type RiskAlertStatus = 'OPEN' | 'RESOLVED' | 'ESCALATED';
 
@@ -18,6 +19,7 @@ export interface RiskAlertAdmin {
   aiToolName: string | null;
   promptText: string | null;
   riskFindings: ComplianceRiskFinding[];
+  attachments: PromptAttachment[];
   appealStatus: AppealStatus | null;
   appealResolution: AppealResolution | null;
 }

@@ -15,6 +15,17 @@ class RiskFindingOut(BaseModel):
     note: str | None
 
 
+class AttachmentOut(BaseModel):
+    id: str
+    fileName: str
+    mimeType: str
+    fileSize: int
+    # True when this attachment's extracted content matched a Sensitive Data
+    # Rule / Use Case Policy — its bytes are kept for audit purposes but were
+    # never forwarded to the AI model (pixel-level redaction isn't feasible).
+    isRedacted: bool
+
+
 class SanitizationChangeOut(BaseModel):
     original: str
     replacement: str
@@ -40,6 +51,7 @@ class PromptSubmitResponse(BaseModel):
     sanitizationChanges: list[SanitizationChangeOut]
     responseText: str | None
     intentClassification: IntentClassificationOut | None = None
+    attachments: list[AttachmentOut] = []
 
 
 class PromptHistoryItem(BaseModel):
@@ -50,6 +62,7 @@ class PromptHistoryItem(BaseModel):
     riskFindings: list[RiskFindingOut]
     responseText: str | None
     createdAt: UtcDatetime
+    attachments: list[AttachmentOut] = []
 
 
 class ChatSessionOut(BaseModel):
