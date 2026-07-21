@@ -16,12 +16,12 @@ async def connect_pool() -> None:
         # instance. Revisit DATABASE_URL if this needs to scale to more
         # concurrent connections than Postgres's direct connection limit allows.
         _pool = await asyncpg.create_pool(
-            dsn=settings.direct_url,
+            dsn=settings.database_url,
             statement_cache_size=0,
             min_size=1,
             max_size=10,
+            ssl="require",
         )
-
 
 async def disconnect_pool() -> None:
     global _pool
