@@ -31,6 +31,10 @@ enum PromptStatus {
   BLOCKED
   SANITIZED
   PENDING_APPROVAL
+  // Governance would have allowed this prompt through, but the tool's
+  // vendor has no API key configured yet — an infra-readiness gate,
+  // independent of and evaluated after the governance decision.
+  PROVIDER_NOT_CONFIGURED
 }
 
 enum RiskLevel {
@@ -124,6 +128,7 @@ model User {
   recommendationsReviewed PolicyRecommendation[]
   governanceCopilotSessions GovernanceCopilotSession[]
   usageScansTriggered     AiToolUsageScan[]
+  providersConfigured     AiProvider[]
 
   @@map("users")
 }
@@ -140,6 +145,12 @@ model AiTool {
   approvedById String?
   approvedBy   User?          @relation(fields: [approvedById], references: [id])
   approvedAt   DateTime?
+  // Which vendor credential actually calls this tool's model. Nullable: an
+  // employee-typed placeholder tool (get_or_create_ai_tool_by_name) starts
+  // with no provider link — an admin assigns/confirms the real vendor
+  // during evaluation rather than trusting free-typed text.
+  providerId   String?
+  provider     AiProvider?    @relation(fields: [providerId], references: [id])
   // Human-readable rationale for the tool's current riskTier decision — set
   // when a trust evaluation is approved or rejected. Reused to immediately
   // resolve later duplicate AiToolRequests for the same tool name without
@@ -155,6 +166,30 @@ model AiTool {
   tierPolicies      ToolTierPolicy[]
 
   @@map("ai_tools")
+}
+
+// One row per AI vendor (OpenAI, Anthropic, Google...), not per model — an
+// API key is a credential for the vendor, and multiple AiTool rows (e.g.
+// "Claude 3 Opus", "Claude Haiku") legitimately share one. Rotating a key
+// is one row update here instead of N updates across every model that
+// vendor offers. encryptedApiKey is Fernet-encrypted (app/core/crypto.py)
+// with a key that only ever lives in an env var, never in this table;
+// keyLastFour lets the UI render a masked value without ever decrypting
+// for display.
+model AiProvider {
+  id              String    @id @default(uuid())
+  vendor          String    @unique
+  apiBaseUrl      String?
+  encryptedApiKey String?
+  keyLastFour     String?
+  configuredById  String?
+  configuredBy    User?     @relation(fields: [configuredById], references: [id])
+  configuredAt    DateTime?
+  createdAt       DateTime  @default(now())
+
+  aiTools AiTool[]
+
+  @@map("ai_providers")
 }
 
 // A periodic (or on-demand) scan of a tool's REAL logged usage — block rate

@@ -24,6 +24,7 @@ class AiToolUpdate(BaseModel):
     description: str | None = None
     riskTier: AiToolRiskTier | None = None
     decisionNotes: str | None = None
+    providerId: str | None = None
 
 
 class AiToolOut(BaseModel):
@@ -42,6 +43,9 @@ class AiToolOut(BaseModel):
     updatedAt: UtcDatetime
     overallScore: int | None
     earliestSlaDeadline: UtcDatetime | None
+    providerId: str | None
+    providerVendor: str | None
+    providerHasApiKey: bool
 
 
 class AiTrustEvaluationCreate(BaseModel):

@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     gemini_api_key: str
 
+    # Fernet key (Fernet.generate_key()) encrypting AiProvider.encryptedApiKey
+    # at rest — deliberately never stored anywhere near the ciphertext it
+    # protects (i.e. not in the database).
+    provider_key_encryption_secret: str
+
     email_host: str
     email_port: int = 587
     sender_email: str

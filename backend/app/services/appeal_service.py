@@ -78,8 +78,12 @@ async def _unblock_prompt_if_overturned(pool: asyncpg.Pool, appeal: asyncpg.Reco
     if await prompt_repository.get_ai_response_by_prompt_id(pool, prompt_id) is not None:
         return
 
+    ai_tool = await ai_tool_repository.get_ai_tool_for_prompt(pool, prompt_id)
+    if ai_tool is None:
+        return
+
     start = time.perf_counter()
-    response_text = await prompt_service.generate_ai_response(prompt["promptText"])
+    response_text = await prompt_service.generate_ai_response(prompt["promptText"], ai_tool)
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     await prompt_repository.create_ai_response(
         pool,
