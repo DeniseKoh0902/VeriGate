@@ -10,6 +10,7 @@ import {
   Plus,
   Paperclip,
   X,
+  PlugZap,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -365,6 +366,32 @@ export function AiWorkspacePage() {
                         <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
                         This prompt was not sent to the AI model yet — it's waiting on a
                         governance admin to review and approve it.
+                      </p>
+
+                      <div className="mt-4 flex gap-2">
+                        <Button
+                          variant="ghost"
+                          className="w-auto"
+                          onClick={() => handleDiscardTurn(turn.id)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {turn.result?.status === 'PROVIDER_NOT_CONFIGURED' && (
+                    <div className="ml-10 rounded-xl border border-slate-300 bg-slate-100 p-4">
+                      <div className="flex items-center gap-2">
+                        <PlugZap size={16} className="text-slate-600" />
+                        <Badge status="neutral">Not Connected Yet</Badge>
+                      </div>
+
+                      <p className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-slate-500" />
+                        This isn't a policy block — this tool's vendor isn't connected to
+                        VeriGate yet. IT has been notified to set it up; try again later or pick
+                        a different model in the meantime.
                       </p>
 
                       <div className="mt-4 flex gap-2">

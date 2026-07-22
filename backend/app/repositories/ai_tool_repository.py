@@ -3,7 +3,10 @@ import uuid
 import asyncpg
 
 _LIST_SELECT = """
-    SELECT t.*, e."overallScore", r."earliestSlaDeadline"
+    SELECT
+        t.*, e."overallScore", r."earliestSlaDeadline",
+        p."vendor" AS "providerVendor",
+        (p."encryptedApiKey" IS NOT NULL) AS "providerHasApiKey"
     FROM "ai_tools" t
     LEFT JOIN LATERAL (
         SELECT "overallScore" FROM "ai_trust_evaluations" ev
@@ -18,20 +21,32 @@ _LIST_SELECT = """
         SELECT MIN("slaDeadline") AS "earliestSlaDeadline" FROM "ai_tool_requests" req
         WHERE req."toolName" = t."name" AND req."status" = 'PENDING'
     ) r ON true
+    LEFT JOIN "ai_providers" p ON p."id" = t."providerId"
 """
 
 
 async def get_or_create_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncpg.Record:
     """Looks up an AiTool by display name, creating a placeholder row if it
     doesn't exist yet — lets AI Workspace reference a model name that hasn't
-    been formally registered through AI Tool Management."""
+    been formally registered through AI Tool Management. The lookup goes
+    through _LIST_SELECT (not a bare SELECT *) so prompt_service's provider-
+    readiness check has "providerHasApiKey" to read off the returned row.
+
+    vendor defaults to the tool name itself, not a literal "Unknown" — a
+    generic placeholder string would silently match prompt_service's
+    fallback-vendor allowance and route straight to Gemini with no admin
+    ever having looked at it. Defaulting to the name means a brand-new,
+    employee-typed tool is its own distinct (non-fallback) vendor until an
+    admin either reclassifies it to a real vendor or explicitly sets it to
+    Google/Gemini — "not configured yet" is the correct default, not a free
+    pass."""
     async with pool.acquire() as conn:
-        existing = await conn.fetchrow('SELECT * FROM "ai_tools" WHERE "name" = $1', name)
+        existing = await conn.fetchrow(f'{_LIST_SELECT} WHERE t."name" = $1', name)
         if existing:
             return existing
 
         tool_id = str(uuid.uuid4())
-        return await conn.fetchrow(
+        row = await conn.fetchrow(
             """
             INSERT INTO "ai_tools" ("id", "name", "vendor", "isApproved", "updatedAt")
             VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
@@ -39,8 +54,15 @@ async def get_or_create_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncp
             """,
             tool_id,
             name,
-            "Unknown",
+            name,
         )
+    return {
+        **dict(row),
+        "overallScore": None,
+        "earliestSlaDeadline": None,
+        "providerVendor": None,
+        "providerHasApiKey": False,
+    }
 
 
 async def get_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> asyncpg.Record | None:
@@ -54,7 +76,10 @@ async def create_pending_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> async
     tool nobody has registered, so it shows up in AI Tool Management for an
     admin to evaluate. Unlike get_or_create_ai_tool_by_name (AI Workspace's
     auto-approving lookup), this deliberately leaves riskTier/isApproved at
-    their unapproved defaults — a request must never silently grant access."""
+    their unapproved defaults — a request must never silently grant access.
+
+    vendor defaults to the tool name itself — see get_or_create_ai_tool_by_name
+    for why a literal "Unknown" would be the wrong default here too."""
     tool_id = str(uuid.uuid4())
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -65,9 +90,15 @@ async def create_pending_ai_tool_by_name(pool: asyncpg.Pool, name: str) -> async
             """,
             tool_id,
             name,
-            "Unknown",
+            name,
         )
-    return {**dict(row), "overallScore": None, "earliestSlaDeadline": None}
+    return {
+        **dict(row),
+        "overallScore": None,
+        "earliestSlaDeadline": None,
+        "providerVendor": None,
+        "providerHasApiKey": False,
+    }
 
 
 async def list_ai_tools(pool: asyncpg.Pool) -> list[asyncpg.Record]:
@@ -131,6 +162,24 @@ async def get_ai_tool(pool: asyncpg.Pool, tool_id: str) -> asyncpg.Record | None
         return await conn.fetchrow(f'{_LIST_SELECT} WHERE t."id" = $1', tool_id)
 
 
+async def get_ai_tool_for_prompt(pool: asyncpg.Pool, prompt_id: str) -> asyncpg.Record | None:
+    """The tool a given prompt was submitted through, via prompts -> ai_sessions
+    -> ai_tools — used when re-generating a response outside submit_prompt's
+    own flow (e.g. an overturned appeal), where generate_ai_response still
+    needs vendor/provider info to dispatch to the right model."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            f"""{_LIST_SELECT}
+            WHERE t."id" = (
+                SELECT s."aiToolId" FROM "prompts" p
+                JOIN "ai_sessions" s ON s."id" = p."sessionId"
+                WHERE p."id" = $1
+            )
+            """,
+            prompt_id,
+        )
+
+
 async def create_ai_tool(
     pool: asyncpg.Pool,
     *,
@@ -158,7 +207,13 @@ async def create_ai_tool(
             description,
             risk_tier,
         )
-    return {**dict(row), "overallScore": None, "earliestSlaDeadline": None}
+    return {
+        **dict(row),
+        "overallScore": None,
+        "earliestSlaDeadline": None,
+        "providerVendor": None,
+        "providerHasApiKey": False,
+    }
 
 
 async def update_ai_tool(
@@ -173,6 +228,7 @@ async def update_ai_tool(
     is_approved: bool | None = None,
     approved_by_id: str | None = None,
     decision_notes: str | None = None,
+    provider_id: str | None = None,
 ) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -191,6 +247,7 @@ async def update_ai_tool(
                     ELSE "approvedAt"
                 END,
                 "decisionNotes" = CASE WHEN $6::"AiToolRiskTier" IS NOT NULL THEN $9 ELSE "decisionNotes" END,
+                "providerId" = COALESCE($10, "providerId"),
                 "updatedAt" = CURRENT_TIMESTAMP
             WHERE "id" = $1
             RETURNING *
@@ -204,6 +261,7 @@ async def update_ai_tool(
             is_approved,
             approved_by_id,
             decision_notes,
+            provider_id,
         )
     if row is None:
         return None

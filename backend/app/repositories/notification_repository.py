@@ -32,6 +32,26 @@ async def create_notification(
         )
 
 
+async def has_recent_notification(
+    pool: asyncpg.Pool, *, notification_type: str, related_entity_id: str, minutes: int
+) -> bool:
+    """Dedup check so e.g. ten employees hitting the same unconfigured
+    provider in one afternoon fires one notification per admin, not ten."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT 1 FROM "notifications"
+            WHERE "type" = $1 AND "relatedEntityId" = $2
+              AND "createdAt" >= NOW() - make_interval(mins => $3)
+            LIMIT 1
+            """,
+            notification_type,
+            related_entity_id,
+            minutes,
+        )
+        return row is not None
+
+
 async def list_notifications_for_user(
     pool: asyncpg.Pool, user_id: str, *, limit: int = 50
 ) -> list[asyncpg.Record]:

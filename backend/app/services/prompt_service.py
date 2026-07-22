@@ -2,6 +2,7 @@ import logging
 import time
 
 import asyncpg
+import httpx
 from fastapi import HTTPException
 from fastapi import status as http_status
 from google.genai import errors, types
@@ -9,6 +10,7 @@ from google.genai import errors, types
 from app.core.gemini_client import get_gemini_client
 from app.db.pool import get_pool
 from app.repositories import (
+    ai_provider_repository,
     ai_tool_repository,
     audit_log_repository,
     notification_repository,
@@ -30,7 +32,7 @@ from app.schemas.prompt import (
     RiskFindingOut,
     SanitizationChangeOut,
 )
-from app.services import attachment_service, detection_service, intent_service
+from app.services import ai_provider_service, attachment_service, detection_service, intent_service
 from app.services.attachment_service import AttachmentInput
 
 logger = logging.getLogger(__name__)
@@ -42,8 +44,58 @@ _SYSTEM_INSTRUCTION = (
     "the user's request."
 )
 
+# Vendors that always route to the org's own Gemini key (GEMINI_API_KEY),
+# never gated on AiProvider — this is what "the company only configures
+# Gemini initially" means in practice. "google"/"gemini" is an explicit,
+# deliberate admin choice. "unknown"/"" is a narrower backward-compat
+# allowance: ai_tool_repository used to default every auto-created tool's
+# vendor to the literal string "Unknown", which would otherwise now read as
+# "a real vendor with no key" and block tools that were working fine before
+# this feature existed. New auto-created tools no longer do that — vendor
+# defaults to the tool's own name (see get_or_create_ai_tool_by_name), which
+# is deliberately NOT in this set, so a brand-new employee-typed tool
+# correctly requires admin configuration instead of silently working.
+_FALLBACK_VENDORS = {"", "unknown", "google", "gemini"}
 
-async def generate_ai_response(prompt_text: str, attachments: list[AttachmentInput] | None = None) -> str:
+
+def _is_fallback_vendor(vendor: str | None) -> bool:
+    return (vendor or "").strip().lower() in _FALLBACK_VENDORS
+
+
+async def generate_ai_response(
+    prompt_text: str, ai_tool: asyncpg.Record, attachments: list[AttachmentInput] | None = None
+) -> str:
+    if _is_fallback_vendor(ai_tool["vendor"]):
+        return await _generate_via_gemini(prompt_text, attachments)
+
+    credentials = await ai_provider_service.get_decrypted_key_for_vendor(ai_tool["vendor"])
+    if credentials is None:
+        # Shouldn't happen — submit_prompt already checked readiness before
+        # ever calling this — but fail toward the one vendor guaranteed to
+        # work rather than a hard error if state changed mid-request.
+        logger.warning(
+            "generate_ai_response called for unready vendor %r — falling back to Gemini.",
+            ai_tool["vendor"],
+        )
+        return await _generate_via_gemini(prompt_text, attachments)
+    api_key, api_base_url = credentials
+
+    vendor = ai_tool["vendor"].strip().lower()
+    if vendor == "openai":
+        return await _generate_via_openai(prompt_text, api_key, api_base_url)
+    if vendor == "anthropic":
+        return await _generate_via_anthropic(prompt_text, api_key, api_base_url)
+
+    # A configured key exists but no adapter has been written for this
+    # vendor yet — better to say so in the response than to silently answer
+    # from the wrong model.
+    logger.warning("No adapter implemented for vendor %r.", ai_tool["vendor"])
+    return f'"{ai_tool["vendor"]}" has an API key configured, but VeriGate has no integration built for it yet.'
+
+
+async def _generate_via_gemini(
+    prompt_text: str, attachments: list[AttachmentInput] | None = None
+) -> str:
     try:
         client = get_gemini_client()
         # Built as one explicit multi-part Content (rather than a flat list
@@ -62,6 +114,79 @@ async def generate_ai_response(prompt_text: str, attachments: list[AttachmentInp
         logger.error("Gemini API error (code=%s): %s", error.code, error.message)
         if error.code == 429:
             return "The AI model is getting a lot of requests right now — please try again shortly."
+        return "Unable to reach the AI model right now. Please try again."
+
+
+# The OpenAI/Anthropic adapters below call each vendor's own documented REST
+# API directly (no SDK dependency) rather than Gemini's. They're implemented
+# against the publicly documented request/response shapes but have not been
+# exercised against a live key in this environment — verify with a real key
+# before relying on them. Attachments aren't forwarded to these two yet
+# (Gemini is the only adapter with multimodal support so far); a prompt with
+# attachments routed to OpenAI/Anthropic still gets its text, just not the
+# files.
+async def _generate_via_openai(prompt_text: str, api_key: str, api_base_url: str | None) -> str:
+    base_url = (api_base_url or "https://api.openai.com/v1").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": prompt_text},
+                    ],
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            return content or "The AI model returned an empty response."
+    except httpx.HTTPStatusError as error:
+        logger.error("OpenAI API error (status=%s): %s", error.response.status_code, error.response.text)
+        if error.response.status_code == 429:
+            return "The AI model is getting a lot of requests right now — please try again shortly."
+        return "Unable to reach the AI model right now. Please try again."
+    except httpx.HTTPError as error:
+        logger.error("OpenAI request failed: %s", error)
+        return "Unable to reach the AI model right now. Please try again."
+
+
+async def _generate_via_anthropic(prompt_text: str, api_key: str, api_base_url: str | None) -> str:
+    base_url = (api_base_url or "https://api.anthropic.com/v1").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{base_url}/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "claude-3-5-sonnet-latest",
+                    "max_tokens": 1024,
+                    "system": _SYSTEM_INSTRUCTION,
+                    "messages": [{"role": "user", "content": prompt_text}],
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            text = "".join(
+                block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
+            )
+            return text or "The AI model returned an empty response."
+    except httpx.HTTPStatusError as error:
+        logger.error(
+            "Anthropic API error (status=%s): %s", error.response.status_code, error.response.text
+        )
+        if error.response.status_code == 429:
+            return "The AI model is getting a lot of requests right now — please try again shortly."
+        return "Unable to reach the AI model right now. Please try again."
+    except httpx.HTTPError as error:
+        logger.error("Anthropic request failed: %s", error)
         return "Unable to reach the AI model right now. Please try again."
 
 
@@ -244,6 +369,12 @@ async def submit_prompt(
 
     sanitization_changes: list[detection_service.SanitizationChange] = []
 
+    # Infra-readiness: independent of and checked after the governance
+    # decision above. Governance already decided this prompt *should* be
+    # allowed through — this decides whether it technically *can* be, i.e.
+    # whether the tool's vendor has a working API key at all.
+    provider_ready = _is_fallback_vendor(ai_tool["vendor"]) or bool(ai_tool["providerHasApiKey"])
+
     if action == "BLOCK":
         status = "BLOCKED"
         sanitized_text = None
@@ -253,6 +384,10 @@ async def submit_prompt(
         # until a human reviews it — nothing is forwarded automatically
         # either way, so the prompt is treated the same as BLOCK here.
         status = "PENDING_APPROVAL"
+        sanitized_text = None
+        final_text = None
+    elif not provider_ready:
+        status = "PROVIDER_NOT_CONFIGURED"
         sanitized_text = None
         final_text = None
     elif action == "SANITIZE":
@@ -407,6 +542,34 @@ async def submit_prompt(
                 related_entity_type="RiskAlert",
                 related_entity_id=alert_row["id"],
             )
+    elif status == "PROVIDER_NOT_CONFIGURED":
+        # Not a policy violation — no risk alert. This is purely "the
+        # infrastructure isn't wired up yet," so it gets its own vendor row
+        # (visible in AI Provider Management as "Not Configured" from now
+        # on) and a deduped admin notification instead.
+        provider_row = await ai_provider_repository.get_or_create_provider_by_vendor(
+            pool, ai_tool["vendor"]
+        )
+        already_notified = await notification_repository.has_recent_notification(
+            pool, notification_type="PROVIDER_NOT_CONFIGURED",
+            related_entity_id=provider_row["id"], minutes=60,
+        )
+        if not already_notified:
+            employee = await user_repository.get_user_by_id(pool, user_id)
+            reviewers = await user_repository.list_governance_users(pool)
+            for reviewer in reviewers:
+                await notification_repository.create_notification(
+                    pool,
+                    user_id=reviewer["id"],
+                    title=f'AI provider not configured: "{ai_tool["vendor"]}"',
+                    message=(
+                        f'{employee["name"] if employee else "An employee"} tried to use '
+                        f'"{ai_tool["name"]}", but "{ai_tool["vendor"]}" has no API key configured yet.'
+                    ),
+                    notification_type="PROVIDER_NOT_CONFIGURED",
+                    related_entity_type="AiProvider",
+                    related_entity_id=provider_row["id"],
+                )
 
     await audit_log_repository.create_audit_log(
         pool,
@@ -449,7 +612,7 @@ async def submit_prompt(
             )
 
         start = time.perf_counter()
-        response_text = await generate_ai_response(generation_text, binary_attachments)
+        response_text = await generate_ai_response(generation_text, ai_tool, binary_attachments)
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         await prompt_repository.create_ai_response(
             pool,

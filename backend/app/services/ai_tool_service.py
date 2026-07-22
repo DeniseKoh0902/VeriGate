@@ -8,6 +8,7 @@ from google.genai import errors, types
 from app.core.gemini_client import get_gemini_client
 from app.db.pool import get_pool
 from app.repositories import (
+    ai_provider_repository,
     ai_tool_repository,
     ai_tool_request_repository,
     ai_trust_evaluation_repository,
@@ -25,6 +26,14 @@ from app.schemas.ai_tool import (
 from app.services.ai_tool_decision_notifier import notify_tool_access_revoked, notify_tool_decision
 
 logger = logging.getLogger(__name__)
+
+# Deliberately narrower than prompt_service's runtime _FALLBACK_VENDORS
+# (which also treats "unknown"/"" as always-ready, so a not-yet-classified
+# tool can still be partially used under a Tool Tier Policy). Approval is
+# exactly the moment an admin is expected to leave "Unknown" behind and
+# commit to a real vendor — so only an explicit Google/Gemini choice skips
+# the API-key requirement here; "Unknown" does not.
+_APPROVAL_FALLBACK_VENDORS = {"google", "gemini"}
 
 _EVAL_MODEL = "gemini-flash-lite-latest"
 _EVAL_SYSTEM_INSTRUCTION = (
@@ -165,6 +174,7 @@ async def update_ai_tool(tool_id: str, payload: AiToolUpdate, actor_id: str) -> 
         is_approved=False if payload.riskTier else None,
         approved_by_id=None,
         decision_notes=payload.decisionNotes if payload.riskTier else None,
+        provider_id=payload.providerId,
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI tool not found.")
@@ -460,6 +470,24 @@ async def resolve_trust_evaluation(
     )
 
     is_approved = payload.decision == "APPROVED"
+
+    # Infra-readiness gate, independent of and evaluated after the
+    # governance decision above: approving means employees can start
+    # sending it real prompts, so its vendor needs a working API key before
+    # that becomes possible — otherwise every prompt to it would resolve as
+    # PROVIDER_NOT_CONFIGURED the moment someone tries to use it.
+    provider_row = None
+    if is_approved and (tool["vendor"] or "").strip().lower() not in _APPROVAL_FALLBACK_VENDORS:
+        provider_row = await ai_provider_repository.get_provider_by_vendor(pool, tool["vendor"])
+        if provider_row is None or provider_row["encryptedApiKey"] is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f'"{tool["vendor"]}" has no API key configured yet. '
+                    "Configure one before approving this tool."
+                ),
+            )
+
     await ai_tool_repository.update_ai_tool(
         pool,
         tool_id,
@@ -467,6 +495,7 @@ async def resolve_trust_evaluation(
         is_approved=is_approved,
         approved_by_id=reviewer_id if is_approved else None,
         decision_notes=payload.rejectionReason if not is_approved else None,
+        provider_id=provider_row["id"] if provider_row else None,
     )
 
     await audit_log_repository.create_audit_log(

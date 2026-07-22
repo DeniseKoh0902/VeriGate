@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Ban, Trash2, Sparkles, Search, Check, X, FileText, RadarIcon } from 'lucide-react';
+import { Plus, Ban, Trash2, Sparkles, Search, Check, X, FileText, RadarIcon, KeyRound } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/context/ToastContext';
 import * as aiToolService from '@/services/aiTool.service';
 import * as biasDriftService from '@/services/biasDrift.service';
+import * as aiProviderService from '@/services/aiProvider.service';
 import type {
   AiTool,
   AiToolCreateInput,
@@ -17,6 +18,14 @@ import type {
   TrustEvaluationScores,
 } from '@/types/aiTool.types';
 import type { AiToolUsageScan } from '@/types/biasDrift.types';
+import type { AiProvider } from '@/types/aiProvider.types';
+
+// Mirrors backend ai_tool_service._APPROVAL_FALLBACK_VENDORS. Deliberately
+// narrower than prompt_service's runtime fallback set (which also treats
+// "unknown"/"" as always-ready) — approval is exactly the moment an admin
+// is expected to leave "Unknown" behind and commit to a real vendor, so
+// only an explicit Google/Gemini choice skips the API-key requirement here.
+const APPROVAL_FALLBACK_VENDORS = new Set(['google', 'gemini']);
 
 const PAGE_SIZE = 6;
 
@@ -106,7 +115,22 @@ export function AiToolManagementPage() {
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReasonDraft, setRejectionReasonDraft] = useState('');
 
+  const [providers, setProviders] = useState<AiProvider[]>([]);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+
   const selectedTool = tools.find((t) => t.id === selectedToolId) ?? null;
+
+  // Vendor readiness is checked against the *draft* vendor (what Approve
+  // will actually save), not the tool's currently-persisted vendor — an
+  // admin correcting "Unknown" to "OpenAI" mid-evaluation should see the
+  // key requirement update immediately, before they've saved anything.
+  const draftVendor = detailsDraft?.vendor.trim() ?? '';
+  const vendorIsFallback = APPROVAL_FALLBACK_VENDORS.has(draftVendor.toLowerCase());
+  const vendorProvider = providers.find(
+    (p) => p.vendor.toLowerCase() === draftVendor.toLowerCase(),
+  );
+  const vendorNeedsApiKey = !vendorIsFallback && !vendorProvider?.hasApiKey;
 
   const loadTools = async () => {
     setIsLoading(true);
@@ -119,8 +143,17 @@ export function AiToolManagementPage() {
     }
   };
 
+  const loadProviders = async () => {
+    try {
+      setProviders(await aiProviderService.listAiProviders());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to load AI providers.');
+    }
+  };
+
   useEffect(() => {
     loadTools();
+    loadProviders();
   }, []);
 
   useEffect(() => {
@@ -301,6 +334,7 @@ export function AiToolManagementPage() {
     setIsReportOpen(false);
     setIsRejecting(false);
     setRejectionReasonDraft('');
+    setApiKeyDraft('');
   };
 
   // Persists tool details + evaluation scores/reasons to the database —
@@ -341,6 +375,24 @@ export function AiToolManagementPage() {
       toast.error(err instanceof Error ? err.message : 'Unable to save changes.');
     } finally {
       setIsSubmittingEvaluation(false);
+    }
+  };
+
+  const saveApiKey = async () => {
+    if (!draftVendor || !apiKeyDraft.trim()) return;
+    setIsSavingApiKey(true);
+    try {
+      await aiProviderService.configureAiProvider({
+        vendor: draftVendor,
+        apiKey: apiKeyDraft.trim(),
+      });
+      setApiKeyDraft('');
+      await loadProviders();
+      toast.success(`API key saved for "${draftVendor}".`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save the API key.');
+    } finally {
+      setIsSavingApiKey(false);
     }
   };
 
@@ -390,9 +442,12 @@ export function AiToolManagementPage() {
     <div className="p-4 sm:p-8">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">AI Tool Management</h1>
+          <h1 className="text-2xl font-bold text-slate-900">
+            AI Tool Management
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Register, approve, and evaluate AI tools available within the organization.
+            Register, approve, and evaluate AI tools available within the
+            organization.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -415,7 +470,9 @@ export function AiToolManagementPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="font-semibold text-slate-900">Registered AI Tools</h2>
+            <h2 className="font-semibold text-slate-900">
+              Registered AI Tools
+            </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
@@ -450,22 +507,30 @@ export function AiToolManagementPage() {
               <Input
                 placeholder="Model name"
                 value={toolForm.name}
-                onChange={(e) => setToolForm({ ...toolForm, name: e.target.value })}
+                onChange={(e) =>
+                  setToolForm({ ...toolForm, name: e.target.value })
+                }
               />
               <Input
                 placeholder="Vendor"
                 value={toolForm.vendor}
-                onChange={(e) => setToolForm({ ...toolForm, vendor: e.target.value })}
+                onChange={(e) =>
+                  setToolForm({ ...toolForm, vendor: e.target.value })
+                }
               />
               <Input
                 placeholder="Version"
-                value={toolForm.version ?? ''}
-                onChange={(e) => setToolForm({ ...toolForm, version: e.target.value })}
+                value={toolForm.version ?? ""}
+                onChange={(e) =>
+                  setToolForm({ ...toolForm, version: e.target.value })
+                }
               />
               <Input
                 placeholder="Description"
-                value={toolForm.description ?? ''}
-                onChange={(e) => setToolForm({ ...toolForm, description: e.target.value })}
+                value={toolForm.description ?? ""}
+                onChange={(e) =>
+                  setToolForm({ ...toolForm, description: e.target.value })
+                }
               />
               <div className="flex gap-2">
                 <Button
@@ -475,7 +540,11 @@ export function AiToolManagementPage() {
                 >
                   Save
                 </Button>
-                <Button variant="ghost" className="w-auto" onClick={() => setToolForm(null)}>
+                <Button
+                  variant="ghost"
+                  className="w-auto"
+                  onClick={() => setToolForm(null)}
+                >
                   Cancel
                 </Button>
               </div>
@@ -483,81 +552,93 @@ export function AiToolManagementPage() {
           )}
 
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-2 font-medium">Model</th>
-                <th className="px-5 py-2 font-medium">Vendor</th>
-                <th className="px-5 py-2 font-medium">Version</th>
-                <th className="px-5 py-2 font-medium">Trust Score</th>
-                <th className="px-5 py-2 font-medium">Status</th>
-                <th className="px-5 py-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!isLoading && paginatedTools.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-sm text-slate-400">
-                    {tools.length === 0
-                      ? 'No AI tools registered yet — register one to get started.'
-                      : 'No tools match your search/filter.'}
-                  </td>
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+                  <th className="px-5 py-2 font-medium">Model</th>
+                  <th className="px-5 py-2 font-medium">Vendor</th>
+                  <th className="px-5 py-2 font-medium">Version</th>
+                  <th className="px-5 py-2 font-medium">Trust Score</th>
+                  <th className="px-5 py-2 font-medium">Status</th>
+                  <th className="px-5 py-2 font-medium">Actions</th>
                 </tr>
-              )}
-              {paginatedTools.map((tool) => (
-                <tr
-                  key={tool.id}
-                  className={
-                    'cursor-pointer border-t border-slate-100' +
-                    (tool.id === selectedToolId ? ' bg-blue-50/60' : '')
-                  }
-                  onClick={() => setSelectedToolId(tool.id)}
-                >
-                  <td className="px-5 py-3 font-medium text-slate-900">{tool.name}</td>
-                  <td className="px-5 py-3 text-slate-500">{tool.vendor}</td>
-                  <td className="px-5 py-3 text-slate-500">{tool.version ?? '—'}</td>
-                  <td className="px-5 py-3 font-semibold text-slate-700">
-                    {tool.overallScore ?? '—'}
-                  </td>
-                  <td className="px-5 py-3">
-                    <Badge status={statusBadge[toolStatus(tool)]}>{toolStatus(tool)}</Badge>
-                    {toolStatus(tool) === 'Pending Review' &&
-                      tool.earliestSlaDeadline &&
-                      new Date(tool.earliestSlaDeadline) < new Date() && (
-                        <p className="mt-1 text-xs font-medium text-red-600">
-                          Overdue — review needed
-                        </p>
-                      )}
-                  </td>
-                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-3 text-slate-400">
-                      <button
-                        aria-label="Evaluate trust score"
-                        className="hover:text-blue-600"
-                        onClick={() => startEvaluation(tool)}
-                      >
-                        <Sparkles size={15} />
-                      </button>
-                      <button
-                        aria-label="Disable tool"
-                        className="hover:text-orange-600"
-                        onClick={() => disableTool(tool)}
-                      >
-                        <Ban size={15} />
-                      </button>
-                      <button
-                        aria-label="Remove tool"
-                        className="hover:text-red-600"
-                        onClick={() => removeTool(tool)}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {!isLoading && paginatedTools.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-5 py-8 text-center text-sm text-slate-400"
+                    >
+                      {tools.length === 0
+                        ? "No AI tools registered yet — register one to get started."
+                        : "No tools match your search/filter."}
+                    </td>
+                  </tr>
+                )}
+                {paginatedTools.map((tool) => (
+                  <tr
+                    key={tool.id}
+                    className={
+                      "cursor-pointer border-t border-slate-100" +
+                      (tool.id === selectedToolId ? " bg-blue-50/60" : "")
+                    }
+                    onClick={() => setSelectedToolId(tool.id)}
+                  >
+                    <td className="px-5 py-3 font-medium text-slate-900">
+                      {tool.name}
+                    </td>
+                    <td className="px-5 py-3 text-slate-500">{tool.vendor}</td>
+                    <td className="px-5 py-3 text-slate-500">
+                      {tool.version ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 font-semibold text-slate-700">
+                      {tool.overallScore ?? "—"}
+                    </td>
+                    <td className="px-5 py-3">
+                      <Badge status={statusBadge[toolStatus(tool)]}>
+                        {toolStatus(tool)}
+                      </Badge>
+                      {toolStatus(tool) === "Pending Review" &&
+                        tool.earliestSlaDeadline &&
+                        new Date(tool.earliestSlaDeadline) < new Date() && (
+                          <p className="mt-1 text-xs font-medium text-red-600">
+                            Overdue — review needed
+                          </p>
+                        )}
+                    </td>
+                    <td
+                      className="px-5 py-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-3 text-slate-400">
+                        <button
+                          aria-label="Evaluate trust score"
+                          className="hover:text-blue-600"
+                          onClick={() => startEvaluation(tool)}
+                        >
+                          <Sparkles size={15} />
+                        </button>
+                        <button
+                          aria-label="Disable tool"
+                          className="hover:text-orange-600"
+                          onClick={() => disableTool(tool)}
+                        >
+                          <Ban size={15} />
+                        </button>
+                        <button
+                          aria-label="Remove tool"
+                          className="hover:text-red-600"
+                          onClick={() => removeTool(tool)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           <Pagination
@@ -581,11 +662,17 @@ export function AiToolManagementPage() {
 
           {selectedTool && (
             <>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTool.name}</p>
-              <p className="text-xs text-slate-400">Evaluated by AI Governance Copilot</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {selectedTool.name}
+              </p>
+              <p className="text-xs text-slate-400">
+                Evaluated by AI Governance Copilot
+              </p>
 
               {isEvaluating && (
-                <p className="mt-4 text-sm text-slate-400">Analyzing tool with Gemini…</p>
+                <p className="mt-4 text-sm text-slate-400">
+                  Analyzing tool with Gemini…
+                </p>
               )}
 
               {!isEvaluating && evalDraft && (
@@ -595,7 +682,9 @@ export function AiToolManagementPage() {
                       <div key={scoreKey}>
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="text-slate-500">{label}</span>
-                          <span className="font-semibold text-slate-700">{evalDraft[scoreKey]}</span>
+                          <span className="font-semibold text-slate-700">
+                            {evalDraft[scoreKey]}
+                          </span>
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-slate-100">
                           <div
@@ -608,13 +697,18 @@ export function AiToolManagementPage() {
                   </div>
 
                   <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
-                    <span className="text-xs font-medium text-slate-500">Overall Trust Score</span>
+                    <span className="text-xs font-medium text-slate-500">
+                      Overall Trust Score
+                    </span>
                     <span className="text-lg font-bold text-emerald-600">
                       {averageScore(evalDraft)}
                     </span>
                   </div>
 
-                  <Button className="mt-4" onClick={() => openReport(selectedTool)}>
+                  <Button
+                    className="mt-4"
+                    onClick={() => openReport(selectedTool)}
+                  >
                     <FileText size={15} />
                     View Full Report
                   </Button>
@@ -622,76 +716,92 @@ export function AiToolManagementPage() {
               )}
 
               {!isEvaluating && !evalDraft && isLoadingEvaluation && (
-                <p className="mt-4 text-sm text-slate-400">Loading latest evaluation…</p>
+                <p className="mt-4 text-sm text-slate-400">
+                  Loading latest evaluation…
+                </p>
               )}
 
-              {!isEvaluating && !evalDraft && !isLoadingEvaluation && latestEvaluation && (
-                <>
-                  <div className="mt-4 space-y-3">
-                    {criteriaLabels.map(({ scoreKey, label }) => (
-                      <div key={scoreKey}>
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="text-slate-500">{label}</span>
-                          <span className="font-semibold text-slate-700">
-                            {latestEvaluation[scoreKey]}
-                          </span>
+              {!isEvaluating &&
+                !evalDraft &&
+                !isLoadingEvaluation &&
+                latestEvaluation && (
+                  <>
+                    <div className="mt-4 space-y-3">
+                      {criteriaLabels.map(({ scoreKey, label }) => (
+                        <div key={scoreKey}>
+                          <div className="mb-1 flex items-center justify-between text-xs">
+                            <span className="text-slate-500">{label}</span>
+                            <span className="font-semibold text-slate-700">
+                              {latestEvaluation[scoreKey]}
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-slate-100">
+                            <div
+                              className="h-1.5 rounded-full bg-blue-600"
+                              style={{
+                                width: `${latestEvaluation[scoreKey]}%`,
+                              }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-1.5 w-full rounded-full bg-slate-100">
-                          <div
-                            className="h-1.5 rounded-full bg-blue-600"
-                            style={{ width: `${latestEvaluation[scoreKey]}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
 
-                  <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
-                    <span className="text-xs font-medium text-slate-500">Overall Trust Score</span>
-                    <span className="text-lg font-bold text-emerald-600">
-                      {latestEvaluation.overallScore}
-                    </span>
-                  </div>
+                    <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+                      <span className="text-xs font-medium text-slate-500">
+                        Overall Trust Score
+                      </span>
+                      <span className="text-lg font-bold text-emerald-600">
+                        {latestEvaluation.overallScore}
+                      </span>
+                    </div>
 
-                  <Button
-                    variant="secondary"
-                    className="mt-4"
-                    onClick={() => openReport(selectedTool)}
-                  >
-                    <FileText size={15} />
-                    View Full Report
-                  </Button>
+                    <Button
+                      variant="secondary"
+                      className="mt-4"
+                      onClick={() => openReport(selectedTool)}
+                    >
+                      <FileText size={15} />
+                      View Full Report
+                    </Button>
 
-                  <Button
-                    variant="ghost"
-                    className="mt-2"
-                    onClick={() => startEvaluation(selectedTool)}
-                  >
-                    Re-evaluate with AI
-                  </Button>
-                </>
-              )}
+                    <Button
+                      variant="ghost"
+                      className="mt-2"
+                      onClick={() => startEvaluation(selectedTool)}
+                    >
+                      Re-evaluate with AI
+                    </Button>
+                  </>
+                )}
 
-              {!isEvaluating && !evalDraft && !isLoadingEvaluation && !latestEvaluation && (
-                <>
-                  <p className="mt-4 text-sm text-slate-400">
-                    This tool hasn't been evaluated yet.
-                  </p>
-                  <Button className="mt-3" onClick={() => startEvaluation(selectedTool)}>
-                    <Sparkles size={15} />
-                    Evaluate with AI
-                  </Button>
-                </>
-              )}
+              {!isEvaluating &&
+                !evalDraft &&
+                !isLoadingEvaluation &&
+                !latestEvaluation && (
+                  <>
+                    <p className="mt-4 text-sm text-slate-400">
+                      This tool hasn't been evaluated yet.
+                    </p>
+                    <Button
+                      className="mt-3"
+                      onClick={() => startEvaluation(selectedTool)}
+                    >
+                      <Sparkles size={15} />
+                      Evaluate with AI
+                    </Button>
+                  </>
+                )}
 
               <div className="mt-6 border-t border-slate-100 pt-4">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Usage Scan History
                 </h3>
                 <p className="mt-1 text-xs text-slate-400">
-                  Drift is measured from this tool's real logged prompts — block rate and
-                  sensitive-data rate — not a re-scored opinion. Runs automatically every
-                  Monday; "Re-evaluate All" above updates the trust score instead.
+                  Drift is measured from this tool's real logged prompts — block
+                  rate and sensitive-data rate — not a re-scored opinion. Runs
+                  automatically every Monday; "Re-evaluate All" above updates
+                  the trust score instead.
                 </p>
 
                 {isLoadingScans && (
@@ -708,12 +818,19 @@ export function AiToolManagementPage() {
                   <>
                     <div className="mt-3 flex items-center justify-between">
                       <span className="text-xs text-slate-500">
-                        Latest scan —{' '}
-                        {new Date(usageScans[0].scannedAt).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                        })}{' '}
-                        ({usageScans[0].triggeredBy === 'MANUAL' ? 'manual' : 'scheduled'})
+                        Latest scan —{" "}
+                        {new Date(usageScans[0].scannedAt).toLocaleDateString(
+                          [],
+                          {
+                            month: "short",
+                            day: "numeric",
+                          },
+                        )}{" "}
+                        (
+                        {usageScans[0].triggeredBy === "MANUAL"
+                          ? "manual"
+                          : "scheduled"}
+                        )
                       </span>
                       {usageScans[0].isDriftFlagged && (
                         <Badge status="critical">Drift Flagged</Badge>
@@ -728,9 +845,14 @@ export function AiToolManagementPage() {
                         </p>
                       </div>
                       <div className="rounded-lg bg-slate-50 px-3 py-2">
-                        <p className="text-xs text-slate-500">Sensitive-Data Rate</p>
+                        <p className="text-xs text-slate-500">
+                          Sensitive-Data Rate
+                        </p>
                         <p className="text-sm font-semibold text-slate-900">
-                          {(usageScans[0].sensitiveDataMatchRate * 100).toFixed(0)}%
+                          {(usageScans[0].sensitiveDataMatchRate * 100).toFixed(
+                            0,
+                          )}
+                          %
                         </p>
                       </div>
                     </div>
@@ -761,36 +883,57 @@ export function AiToolManagementPage() {
       <Modal
         isOpen={isReportOpen && !!selectedTool && !!evalDraft && !!detailsDraft}
         onClose={closeReport}
-        title={`AI Trust Evaluation Report — ${selectedTool?.name ?? ''}`}
+        title={`AI Trust Evaluation Report — ${selectedTool?.name ?? ""}`}
         description="Review the tool details and evaluation below, adjust anything as needed, then approve or reject."
         maxWidthClassName="max-w-3xl"
       >
         {evalDraft && detailsDraft && (
           <div className="space-y-5">
             <div className="rounded-lg border border-slate-200 p-4">
-              <p className="mb-3 text-sm font-semibold text-slate-900">Tool Details</p>
+              <p className="mb-3 text-sm font-semibold text-slate-900">
+                Tool Details
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Vendor</label>
+                  <label className="text-xs font-medium text-slate-500">
+                    Vendor
+                  </label>
                   <Input
                     value={detailsDraft.vendor}
-                    onChange={(e) => setDetailsDraft({ ...detailsDraft, vendor: e.target.value })}
+                    onChange={(e) =>
+                      setDetailsDraft({
+                        ...detailsDraft,
+                        vendor: e.target.value,
+                      })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Version</label>
+                  <label className="text-xs font-medium text-slate-500">
+                    Version
+                  </label>
                   <Input
                     value={detailsDraft.version}
-                    onChange={(e) => setDetailsDraft({ ...detailsDraft, version: e.target.value })}
+                    onChange={(e) =>
+                      setDetailsDraft({
+                        ...detailsDraft,
+                        version: e.target.value,
+                      })
+                    }
                   />
                 </div>
               </div>
               <div className="mt-3">
-                <label className="text-xs font-medium text-slate-500">Description</label>
+                <label className="text-xs font-medium text-slate-500">
+                  Description
+                </label>
                 <textarea
                   value={detailsDraft.description}
                   onChange={(e) =>
-                    setDetailsDraft({ ...detailsDraft, description: e.target.value })
+                    setDetailsDraft({
+                      ...detailsDraft,
+                      description: e.target.value,
+                    })
                   }
                   rows={2}
                   className="mt-1 w-full resize-none rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
@@ -799,9 +942,14 @@ export function AiToolManagementPage() {
             </div>
 
             {criteriaLabels.map(({ scoreKey, reasonKey, label }) => (
-              <div key={scoreKey} className="rounded-lg border border-slate-200 p-4">
+              <div
+                key={scoreKey}
+                className="rounded-lg border border-slate-200 p-4"
+              >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-900">{label}</span>
+                  <span className="text-sm font-semibold text-slate-900">
+                    {label}
+                  </span>
                   <input
                     type="number"
                     min={0}
@@ -810,7 +958,10 @@ export function AiToolManagementPage() {
                     onChange={(e) =>
                       setEvalDraft({
                         ...evalDraft,
-                        [scoreKey]: Math.max(0, Math.min(100, Number(e.target.value))),
+                        [scoreKey]: Math.max(
+                          0,
+                          Math.min(100, Number(e.target.value)),
+                        ),
                       })
                     }
                     className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm font-semibold text-slate-700"
@@ -818,7 +969,9 @@ export function AiToolManagementPage() {
                 </div>
                 <textarea
                   value={evalDraft[reasonKey]}
-                  onChange={(e) => setEvalDraft({ ...evalDraft, [reasonKey]: e.target.value })}
+                  onChange={(e) =>
+                    setEvalDraft({ ...evalDraft, [reasonKey]: e.target.value })
+                  }
                   rows={2}
                   className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 focus:border-slate-400 focus:outline-none"
                 />
@@ -826,7 +979,9 @@ export function AiToolManagementPage() {
             ))}
 
             <div>
-              <p className="text-sm font-semibold text-slate-900">Overall Justification</p>
+              <p className="text-sm font-semibold text-slate-900">
+                Overall Justification
+              </p>
               <textarea
                 value={justificationDraft}
                 onChange={(e) => setJustificationDraft(e.target.value)}
@@ -836,9 +991,48 @@ export function AiToolManagementPage() {
             </div>
 
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
-              <span className="text-xs font-medium text-slate-500">Overall Trust Score</span>
-              <span className="text-lg font-bold text-emerald-600">{averageScore(evalDraft)}</span>
+              <span className="text-xs font-medium text-slate-500">
+                Overall Trust Score
+              </span>
+              <span className="text-lg font-bold text-emerald-600">
+                {averageScore(evalDraft)}
+              </span>
             </div>
+
+            {!isRejecting && vendorNeedsApiKey && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                  <KeyRound size={13} />"{selectedTool?.name}" has no API key
+                  configured
+                </label>
+                <p className="mt-1 text-xs text-amber-700">
+                  Approval is blocked until this vendor has a working API key —
+                  every model
+                  {selectedTool?.name
+                    ? ` ${selectedTool?.name} offers`
+                    : " this vendor offers"}{" "}
+                  shares one credential.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={apiKeyDraft}
+                    onChange={(e) => setApiKeyDraft(e.target.value)}
+                    placeholder="API key"
+                    className="w-full rounded-md border border-amber-200 bg-white px-2.5 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none"
+                  />
+                  <Button
+                    className="w-auto shrink-0"
+                    onClick={saveApiKey}
+                    isLoading={isSavingApiKey}
+                    disabled={!apiKeyDraft.trim()}
+                  >
+                    Save Key
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {isRejecting && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-4">
@@ -861,8 +1055,9 @@ export function AiToolManagementPage() {
                 <>
                   <Button
                     className="w-auto"
-                    onClick={() => submitDecision('APPROVED')}
+                    onClick={() => submitDecision("APPROVED")}
                     isLoading={isSubmittingEvaluation}
+                    disabled={vendorNeedsApiKey}
                   >
                     <Check size={15} />
                     Approve
@@ -883,7 +1078,11 @@ export function AiToolManagementPage() {
                   >
                     Save
                   </Button>
-                  <Button variant="ghost" className="w-auto" onClick={cancelReport}>
+                  <Button
+                    variant="ghost"
+                    className="w-auto"
+                    onClick={cancelReport}
+                  >
                     Cancel
                   </Button>
                 </>
@@ -892,12 +1091,16 @@ export function AiToolManagementPage() {
                   <Button
                     variant="secondary"
                     className="w-auto border-red-300 text-red-700 hover:bg-red-50"
-                    onClick={() => submitDecision('REJECTED')}
+                    onClick={() => submitDecision("REJECTED")}
                     isLoading={isSubmittingEvaluation}
                   >
                     Confirm Reject
                   </Button>
-                  <Button variant="ghost" className="w-auto" onClick={() => setIsRejecting(false)}>
+                  <Button
+                    variant="ghost"
+                    className="w-auto"
+                    onClick={() => setIsRejecting(false)}
+                  >
                     Back
                   </Button>
                 </>

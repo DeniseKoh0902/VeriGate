@@ -113,8 +113,30 @@ export function DashboardPage() {
     }
   };
 
+  // Silent background refetch — no loading spinner, no error banner (a
+  // transient failed poll shouldn't disrupt an otherwise-fine dashboard).
+  // This is what makes "Recently Added AI Tools" and everything else on
+  // this page actually live, not just "correct as of whenever you last hit
+  // Refresh."
+  const pollSilently = async () => {
+    try {
+      setData(await dashboardService.getDashboardOverview());
+      setLastUpdated(new Date());
+    } catch {
+      // Swallowed — the next poll (or the visible Refresh button) will
+      // recover; surfacing a transient network blip here would just be
+      // noisy for something that self-heals.
+    }
+  };
+
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(pollSilently, 15_000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

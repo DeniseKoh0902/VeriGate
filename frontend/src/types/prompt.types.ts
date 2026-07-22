@@ -1,5 +1,10 @@
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-export type PromptStatus = 'FORWARDED' | 'BLOCKED' | 'SANITIZED' | 'PENDING_APPROVAL';
+export type PromptStatus =
+  | 'FORWARDED'
+  | 'BLOCKED'
+  | 'SANITIZED'
+  | 'PENDING_APPROVAL'
+  | 'PROVIDER_NOT_CONFIGURED';
 
 export interface RiskFinding {
   category: string;
